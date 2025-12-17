@@ -47,8 +47,14 @@ public:
     // Thread-safe: queues MIDI message for next audio block
     void triggerTestNote();
     
+    // Send MIDI note from keyboard (thread-safe)
+    void sendMidiNote(int note, float velocity, bool noteOn);
+    
     // Load sample from file (called from UI thread)
     bool loadSampleFromFile(const juce::File& file);
+    
+    // Get sample data for visualization (thread-safe)
+    void getSampleDataForVisualization(std::vector<float>& outData) const;
 
 private:
     JuceEngineAdapter adapter;

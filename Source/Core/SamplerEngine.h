@@ -1,6 +1,6 @@
 #pragma once
 
-#include "SamplerVoice.h"
+#include "VoiceManager.h"
 #include "MidiEvent.h"
 #include "LinearSmoother.h"
 
@@ -20,6 +20,9 @@ public:
     // Set the sample to play (called from wrapper after loading)
     void setSample(const float* data, int length, double sourceSampleRate);
     
+    // Set root note (MIDI note that plays at original pitch, default 60)
+    void setRootNote(int rootNote);
+    
     // Handle MIDI events (called from wrapper)
     void handleMidi(const MidiEvent* events, int count);
     
@@ -31,7 +34,7 @@ public:
     void setGain(float gain);
     
 private:
-    SamplerVoice voice;
+    VoiceManager voiceManager;
     LinearSmoother gainSmoother;
     double currentSampleRate;
     int currentBlockSize;

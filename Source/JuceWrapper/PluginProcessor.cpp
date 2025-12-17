@@ -184,11 +184,24 @@ bool Op1CloneAudioProcessor::loadSampleFromFile(const juce::File& file) {
     return true;
 }
 
+void Op1CloneAudioProcessor::getSampleDataForVisualization(std::vector<float>& outData) const {
+    adapter.getSampleDataForVisualization(outData);
+}
+
 void Op1CloneAudioProcessor::triggerTestNote() {
+    // Thread-safe lock-free: queue MIDI message for next audio block
+    sendMidiNote(60, 1.0f, true);
+}
+
+void Op1CloneAudioProcessor::sendMidiNote(int note, float velocity, bool noteOn) {
     // Thread-safe lock-free: queue MIDI message for next audio block
     int currentCount = pendingMidiCount.load(std::memory_order_acquire);
     if (currentCount < 32) {
-        midiMessageBuffer[currentCount] = juce::MidiMessage::noteOn(1, 60, 1.0f);
+        if (noteOn) {
+            midiMessageBuffer[currentCount] = juce::MidiMessage::noteOn(1, note, velocity);
+        } else {
+            midiMessageBuffer[currentCount] = juce::MidiMessage::noteOff(1, note, velocity);
+        }
         pendingMidiCount.store(currentCount + 1, std::memory_order_release);
     }
 }

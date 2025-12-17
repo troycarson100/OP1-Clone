@@ -64,6 +64,11 @@ float JuceEngineAdapter::getGain() const {
     return 1.0f; // Core engine doesn't expose getter, return default
 }
 
+void JuceEngineAdapter::getSampleDataForVisualization(std::vector<float>& outData) const {
+    // Thread-safe: copy sample data for visualization
+    outData = sampleData;
+}
+
 void JuceEngineAdapter::convertMidiBuffer(juce::MidiBuffer& midiMessages, int numSamples) {
     midiEventBuffer.clear();
     

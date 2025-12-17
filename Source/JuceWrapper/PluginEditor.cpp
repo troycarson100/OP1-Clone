@@ -6,6 +6,9 @@
 Op1CloneAudioProcessorEditor::Op1CloneAudioProcessorEditor(Op1CloneAudioProcessor& p)
     : AudioProcessorEditor(&p), audioProcessor(p) {
     
+    // Setup screen component
+    addAndMakeVisible(&screenComponent);
+    
     // Setup gain slider
     gainSlider.setSliderStyle(juce::Slider::RotaryVerticalDrag);
     gainSlider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
@@ -33,7 +36,7 @@ Op1CloneAudioProcessorEditor::Op1CloneAudioProcessorEditor(Op1CloneAudioProcesso
     addAndMakeVisible(&loadSampleButton);
     
     // Setup info label
-    infoLabel.setText("Click Test button or play MIDI note 60 (C4)", juce::dontSendNotification);
+    infoLabel.setText("Keyboard: A-K = C4-C5, Z-M = C3-B3 | Or use MIDI controller", juce::dontSendNotification);
     infoLabel.setJustificationType(juce::Justification::centred);
     infoLabel.setColour(juce::Label::textColourId, juce::Colours::lightgrey);
     addAndMakeVisible(&infoLabel);
@@ -46,39 +49,56 @@ Op1CloneAudioProcessorEditor::Op1CloneAudioProcessorEditor(Op1CloneAudioProcesso
     
     currentSampleName = "Default (440Hz tone)";
     
-    setSize(400, 400);
+    // Enable keyboard focus for MIDI keyboard input
+    setWantsKeyboardFocus(true);
+    
+    // Update waveform with default sample
+    updateWaveform();
+    
+    setSize(600, 500);
 }
 
 Op1CloneAudioProcessorEditor::~Op1CloneAudioProcessorEditor() {
 }
 
 void Op1CloneAudioProcessorEditor::paint(juce::Graphics& g) {
-    g.fillAll(getLookAndFeel().findColour(juce::ResizableWindow::backgroundColourId));
+    // Dark background
+    g.fillAll(juce::Colour(0xFF2A2A2A));
     
+    // Title at top
     g.setColour(juce::Colours::white);
-    g.setFont(15.0f);
-    g.drawFittedText("OP-1 Clone Sampler", getLocalBounds(), juce::Justification::centredTop, 1);
+    g.setFont(18.0f);
+    g.drawFittedText("OP-1 Clone Sampler", getLocalBounds().removeFromTop(25), 
+                     juce::Justification::centred, 1);
 }
 
 void Op1CloneAudioProcessorEditor::resized() {
     auto bounds = getLocalBounds();
-    bounds.removeFromTop(30);
+    
+    // Screen component takes up most of the space (70% width, 60% height - reduced by 40%)
+    auto screenBounds = bounds.removeFromLeft(bounds.getWidth() * 0.7);
+    screenBounds.setHeight(static_cast<int>(screenBounds.getHeight() * 0.6)); // 40% reduction = 60% of original
+    screenComponent.setBounds(screenBounds.reduced(10));
+    
+    // Controls on the right side
+    auto controlArea = bounds.reduced(10);
+    controlArea.removeFromTop(30);
     
     // Sample label at top
-    sampleLabel.setBounds(bounds.removeFromTop(25).reduced(20, 5));
+    sampleLabel.setBounds(controlArea.removeFromTop(25).reduced(5));
     
     // Center the gain slider
-    auto sliderArea = bounds.reduced(20);
-    gainSlider.setBounds(sliderArea.removeFromTop(150).reduced(50));
+    auto sliderArea = controlArea.reduced(10);
+    gainSlider.setBounds(sliderArea.removeFromTop(150).reduced(20));
     gainLabel.setBounds(sliderArea.removeFromTop(20));
     
     // Buttons
-    auto buttonArea = sliderArea.removeFromTop(40).reduced(60, 10);
-    loadSampleButton.setBounds(buttonArea.removeFromLeft(buttonArea.getWidth() / 2).reduced(5, 0));
-    testButton.setBounds(buttonArea.reduced(5, 0));
+    auto buttonArea = sliderArea.removeFromTop(40).reduced(10, 5);
+    loadSampleButton.setBounds(buttonArea.removeFromTop(buttonArea.getHeight() / 2).reduced(5, 2));
+    testButton.setBounds(buttonArea.reduced(5, 2));
     
     // Info label
-    infoLabel.setBounds(sliderArea.removeFromTop(30).reduced(20));
+    infoLabel.setBounds(sliderArea.removeFromTop(40).reduced(10));
 }
 
 void Op1CloneAudioProcessorEditor::testButtonClicked() {
@@ -105,6 +125,10 @@ void Op1CloneAudioProcessorEditor::loadSampleButtonClicked() {
                 currentSampleName = selectedFile.getFileName();
                 sampleLabel.setText("Sample: " + currentSampleName, juce::dontSendNotification);
                 sampleLabel.setColour(juce::Label::textColourId, juce::Colours::lightblue);
+                
+                // Update waveform visualization
+                updateWaveform();
+                
                 repaint();
             } else {
                 // Show error in label
@@ -117,5 +141,90 @@ void Op1CloneAudioProcessorEditor::loadSampleButtonClicked() {
         // Clear file chooser after use
         fileChooser.reset();
     });
+}
+
+bool Op1CloneAudioProcessorEditor::keyPressed(const juce::KeyPress& key) {
+    int note = keyToMidiNote(key.getKeyCode());
+    if (note >= 0 && note < 128 && !pressedKeys[note]) {
+        pressedKeys[note] = true;
+        sendMidiNote(note, 1.0f, true);
+        return true;
+    }
+    return false;
+}
+
+bool Op1CloneAudioProcessorEditor::keyStateChanged(bool isKeyDown) {
+    // Check all mapped keyboard keys and send note off for released keys
+    // Standard piano keyboard layout
+    int keyCodes[] = {
+        'A', 'W', 'S', 'E', 'D', 'F', 'T', 'G', 'Y', 'H', 'U', 'J', 'K',
+        'Z', 'X', 'C', 'V', 'B', 'N', 'M', ',', '.', '/'  // Lower octave
+    };
+    int baseNotes[] = {
+        60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72,  // Middle octave
+        48, 50, 52, 53, 55, 57, 59, 60, 62, 64  // Lower octave (white keys only for lower)
+    };
+    
+    for (size_t i = 0; i < sizeof(keyCodes) / sizeof(keyCodes[0]); ++i) {
+        int note = baseNotes[i];
+        bool keyCurrentlyDown = juce::KeyPress::isKeyCurrentlyDown(keyCodes[i]);
+        
+        if (!keyCurrentlyDown && note >= 0 && note < 128 && pressedKeys[note]) {
+            // Key was released
+            pressedKeys[note] = false;
+            sendMidiNote(note, 0.0f, false);
+        }
+    }
+    return true;
+}
+
+int Op1CloneAudioProcessorEditor::keyToMidiNote(int keyCode) const {
+    // Standard piano keyboard layout starting at C4 (MIDI note 60)
+    // White keys: A=60, S=62, D=64, F=65, G=67, H=69, J=71, K=72
+    // Black keys: W=61, E=63, T=66, Y=68, U=70
+    // Lower octave: Z=48, X=50, C=52, V=53, B=55, N=57, M=59, ,=60, .=62, /=64
+    
+    switch (keyCode) {
+        // Middle octave (C4-C5)
+        case 'A': return 60; // C
+        case 'W': return 61; // C#
+        case 'S': return 62; // D
+        case 'E': return 63; // D#
+        case 'D': return 64; // E
+        case 'F': return 65; // F
+        case 'T': return 66; // F#
+        case 'G': return 67; // G
+        case 'Y': return 68; // G#
+        case 'H': return 69; // A
+        case 'U': return 70; // A#
+        case 'J': return 71; // B
+        case 'K': return 72; // C
+        
+        // Lower octave (C3-C4)
+        case 'Z': return 48; // C
+        case 'X': return 50; // D
+        case 'C': return 52; // E
+        case 'V': return 53; // F
+        case 'B': return 55; // G
+        case 'N': return 57; // A
+        case 'M': return 59; // B
+        case ',': return 60; // C
+        case '.': return 62; // D
+        case '/': return 64; // E
+        
+        default: return -1;
+    }
+}
+
+void Op1CloneAudioProcessorEditor::sendMidiNote(int note, float velocity, bool noteOn) {
+    // Send MIDI message through processor
+    audioProcessor.sendMidiNote(note, velocity, noteOn);
+}
+
+void Op1CloneAudioProcessorEditor::updateWaveform() {
+    // Get sample data from processor and update screen
+    std::vector<float> sampleData;
+    audioProcessor.getSampleDataForVisualization(sampleData);
+    screenComponent.setSampleData(sampleData);
 }
 

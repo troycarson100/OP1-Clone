@@ -27,6 +27,7 @@ juce_add_plugin(Op1Clone
 target_sources(Op1Clone PRIVATE
     Source/Core/SamplerVoice.cpp
     Source/Core/SamplerEngine.cpp
+    Source/Core/VoiceManager.cpp
 )
 
 # JUCE wrapper source files
@@ -37,6 +38,10 @@ target_sources(Op1Clone PRIVATE
     Source/JuceWrapper/PluginEditor.h
     Source/JuceWrapper/JuceEngineAdapter.cpp
     Source/JuceWrapper/JuceEngineAdapter.h
+    Source/JuceWrapper/ScreenComponent.cpp
+    Source/JuceWrapper/ScreenComponent.h
+    Source/JuceWrapper/WaveformComponent.cpp
+    Source/JuceWrapper/WaveformComponent.h
 )
 
 # Include directories

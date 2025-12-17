@@ -24,7 +24,11 @@ void SamplerEngine::prepare(double sampleRate, int blockSize, int numChannels) {
 }
 
 void SamplerEngine::setSample(const float* data, int length, double sourceSampleRate) {
-    voice.setSample(data, length, sourceSampleRate);
+    voiceManager.setSample(data, length, sourceSampleRate);
+}
+
+void SamplerEngine::setRootNote(int rootNote) {
+    voiceManager.setRootNote(rootNote);
 }
 
 void SamplerEngine::handleMidi(const MidiEvent* events, int count) {
@@ -32,9 +36,9 @@ void SamplerEngine::handleMidi(const MidiEvent* events, int count) {
         const MidiEvent& event = events[i];
         
         if (event.type == MidiEvent::NoteOn) {
-            voice.noteOn(event.note, event.velocity);
+            voiceManager.noteOn(event.note, event.velocity);
         } else if (event.type == MidiEvent::NoteOff) {
-            voice.noteOff();
+            voiceManager.noteOff(event.note);
         }
     }
 }
@@ -52,15 +56,15 @@ void SamplerEngine::process(float** output, int numChannels, int numSamples) {
     // Update gain - use current smoothed value
     // For simplicity, we set gain once per block (smoother transitions across blocks)
     float currentGain = gainSmoother.getCurrentValue();
-    voice.setGain(currentGain);
+    voiceManager.setGain(currentGain);
     
     // Advance smoother (for next block)
     for (int i = 0; i < numSamples; ++i) {
         gainSmoother.getNextValue();
     }
     
-    // Process voice
-    voice.process(output, numChannels, numSamples, currentSampleRate);
+    // Process all voices
+    voiceManager.process(output, numChannels, numSamples, currentSampleRate);
 }
 
 void SamplerEngine::setGain(float gain) {

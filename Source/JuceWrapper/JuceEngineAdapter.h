@@ -28,6 +28,9 @@ public:
     // Get current gain
     float getGain() const;
     
+    // Get sample data for visualization (thread-safe copy)
+    void getSampleDataForVisualization(std::vector<float>& outData) const;
+    
 private:
     Core::SamplerEngine engine;
     
