@@ -7,6 +7,21 @@ A hardware-portable sampler engine with JUCE wrapper for macOS testing.
 - **Core/** - Portable C++ engine (no JUCE dependencies)
 - **JuceWrapper/** - Thin adapter layer between JUCE and Core
 
+## Getting Started
+
+### First Time Setup
+
+1. **Clone JUCE** (required for building):
+   ```bash
+   git clone https://github.com/juce-framework/JUCE.git JUCE
+   ```
+   
+   Or if you want to use it as a submodule:
+   ```bash
+   git submodule add https://github.com/juce-framework/JUCE.git JUCE
+   git submodule update --init --recursive
+   ```
+
 ## Building
 
 ### Prerequisites
@@ -19,7 +34,7 @@ A hardware-portable sampler engine with JUCE wrapper for macOS testing.
 
 #### Option 1: Using JUCE as Git Submodule (Recommended)
 
-1. **Clone JUCE as submodule**:
+1. **Clone JUCE as submodule** (if not already done):
    ```bash
    git submodule add https://github.com/juce-framework/JUCE.git JUCE
    git submodule update --init --recursive
