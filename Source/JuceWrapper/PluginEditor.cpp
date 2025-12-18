@@ -155,6 +155,32 @@ Op1CloneAudioProcessorEditor::Op1CloneAudioProcessorEditor(Op1CloneAudioProcesso
     shiftToggleButton.addListener(this);
     addAndMakeVisible(&shiftToggleButton);
     
+    // Setup 5 square buttons above encoders
+    squareButton1.setButtonText("");
+    squareButton1.setColour(juce::TextButton::buttonColourId, juce::Colours::darkgrey);
+    squareButton1.addListener(this);
+    addAndMakeVisible(&squareButton1);
+    
+    squareButton2.setButtonText("");
+    squareButton2.setColour(juce::TextButton::buttonColourId, juce::Colours::darkgrey);
+    squareButton2.addListener(this);
+    addAndMakeVisible(&squareButton2);
+    
+    squareButton3.setButtonText("");
+    squareButton3.setColour(juce::TextButton::buttonColourId, juce::Colours::darkgrey);
+    squareButton3.addListener(this);
+    addAndMakeVisible(&squareButton3);
+    
+    squareButton4.setButtonText("");
+    squareButton4.setColour(juce::TextButton::buttonColourId, juce::Colours::darkgrey);
+    squareButton4.addListener(this);
+    addAndMakeVisible(&squareButton4);
+    
+    squareButton5.setButtonText("");
+    squareButton5.setColour(juce::TextButton::buttonColourId, juce::Colours::darkgrey);
+    squareButton5.addListener(this);
+    addAndMakeVisible(&squareButton5);
+    
     // Info label removed
     
     currentSampleName = "Default (440Hz tone)";

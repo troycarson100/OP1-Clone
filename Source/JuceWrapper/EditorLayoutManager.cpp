@@ -110,27 +110,48 @@ void EditorLayoutManager::layoutComponents() {
     // Under screen: Load sample button (directly below the screen)
     editor->loadSampleButton.setBounds(screenArea.removeFromTop(40).reduced(10));
     
-    // Right side: Encoders in two horizontal rows
+    // Right side: Encoders in two horizontal rows, bottom-aligned with screen
     auto encoderArea = bounds.reduced(10);
-    int encoderSize = 80; // Much smaller encoders
+    int encoderSize = 80;
     int encoderSpacing = 15;
     int rowSpacing = 20; // Vertical spacing between rows
-    // Move left (closer to screen) - start closer to left edge instead of centering
-    int startX = encoderArea.getX() + 20; // 20px from left edge instead of centered
+    
+    // Get screen component bottom position for alignment
+    int screenBottom = screenComponentBounds.getBottom();
+    
+    // Calculate total width needed for 4 encoders
+    int totalEncoderWidth = (encoderSize * 4) + (encoderSpacing * 3);
+    
+    // Position encoders to the right of the screen
+    int encoderStartX = encoderArea.getX() + 20; // Start position on the right side
+    
+    // Position encoders so bottom row aligns with bottom of screen
+    int bottomRowY = screenBottom - encoderSize / 2; // Center encoders vertically on bottom edge
+    int topRowY = bottomRowY - encoderSize - rowSpacing;
+    
+    // 5 square buttons above encoders, spreading the same width as encoders
+    int buttonSpacing = 10; // Spacing between buttons
+    int buttonSize = (totalEncoderWidth - (buttonSpacing * 4)) / 5; // Calculate button size to match encoder width
+    int buttonStartX = encoderStartX; // Align with encoder start
+    int buttonY = topRowY - encoderSize / 2 - buttonSize - rowSpacing; // Position above top row of encoders
+    
+    editor->squareButton1.setBounds(buttonStartX, buttonY, buttonSize, buttonSize);
+    editor->squareButton2.setBounds(buttonStartX + buttonSize + buttonSpacing, buttonY, buttonSize, buttonSize);
+    editor->squareButton3.setBounds(buttonStartX + (buttonSize + buttonSpacing) * 2, buttonY, buttonSize, buttonSize);
+    editor->squareButton4.setBounds(buttonStartX + (buttonSize + buttonSpacing) * 3, buttonY, buttonSize, buttonSize);
+    editor->squareButton5.setBounds(buttonStartX + (buttonSize + buttonSpacing) * 4, buttonY, buttonSize, buttonSize);
     
     // Top row (encoders 1-4)
-    int topRowY = encoderArea.getY() + encoderArea.getHeight() * 0.15; // Move up more (15% from top, was 25%)
-    editor->encoder1.setBounds(startX, topRowY - encoderSize / 2, encoderSize, encoderSize);
-    editor->encoder2.setBounds(startX + encoderSize + encoderSpacing, topRowY - encoderSize / 2, encoderSize, encoderSize);
-    editor->encoder3.setBounds(startX + (encoderSize + encoderSpacing) * 2, topRowY - encoderSize / 2, encoderSize, encoderSize);
-    editor->encoder4.setBounds(startX + (encoderSize + encoderSpacing) * 3, topRowY - encoderSize / 2, encoderSize, encoderSize);
+    editor->encoder1.setBounds(encoderStartX, topRowY - encoderSize / 2, encoderSize, encoderSize);
+    editor->encoder2.setBounds(encoderStartX + encoderSize + encoderSpacing, topRowY - encoderSize / 2, encoderSize, encoderSize);
+    editor->encoder3.setBounds(encoderStartX + (encoderSize + encoderSpacing) * 2, topRowY - encoderSize / 2, encoderSize, encoderSize);
+    editor->encoder4.setBounds(encoderStartX + (encoderSize + encoderSpacing) * 3, topRowY - encoderSize / 2, encoderSize, encoderSize);
     
-    // Bottom row (encoders 5-8)
-    int bottomRowY = topRowY + encoderSize + rowSpacing;
-    editor->encoder5.setBounds(startX, bottomRowY - encoderSize / 2, encoderSize, encoderSize);
-    editor->encoder6.setBounds(startX + encoderSize + encoderSpacing, bottomRowY - encoderSize / 2, encoderSize, encoderSize);
-    editor->encoder7.setBounds(startX + (encoderSize + encoderSpacing) * 2, bottomRowY - encoderSize / 2, encoderSize, encoderSize);
-    editor->encoder8.setBounds(startX + (encoderSize + encoderSpacing) * 3, bottomRowY - encoderSize / 2, encoderSize, encoderSize);
+    // Bottom row (encoders 5-8) - aligned with bottom of screen
+    editor->encoder5.setBounds(encoderStartX, bottomRowY - encoderSize / 2, encoderSize, encoderSize);
+    editor->encoder6.setBounds(encoderStartX + encoderSize + encoderSpacing, bottomRowY - encoderSize / 2, encoderSize, encoderSize);
+    editor->encoder7.setBounds(encoderStartX + (encoderSize + encoderSpacing) * 2, bottomRowY - encoderSize / 2, encoderSize, encoderSize);
+    editor->encoder8.setBounds(encoderStartX + (encoderSize + encoderSpacing) * 3, bottomRowY - encoderSize / 2, encoderSize, encoderSize);
     
     // MIDI status at bottom
     auto statusBounds = editor->getLocalBounds().removeFromBottom(25);

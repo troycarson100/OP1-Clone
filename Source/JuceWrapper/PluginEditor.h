@@ -121,6 +121,13 @@ private:
     EncoderComponent encoder7;
     EncoderComponent encoder8;
     
+    // 5 square buttons above encoders
+    juce::TextButton squareButton1;
+    juce::TextButton squareButton2;
+    juce::TextButton squareButton3;
+    juce::TextButton squareButton4;
+    juce::TextButton squareButton5;
+    
     juce::Slider gainSlider;
     juce::Label volumeLabel;  // "Volume" text under the knob
     juce::Label sampleNameLabel;  // Sample name displayed above screen
