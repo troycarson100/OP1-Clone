@@ -162,6 +162,7 @@ private:
     int sampleLength; // Store sample length for encoder mapping
     double sampleRate; // Store sample rate for time calculations
     int projectBPM;  // Project BPM (default 120)
+    bool isResettingADSR;  // Flag to prevent showing ADSR visualization during reset
     
     // Parameter display fade-out tracking
     int64_t lastEncoderChangeTime;  // Time when encoder was last moved (milliseconds)

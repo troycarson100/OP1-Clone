@@ -170,6 +170,7 @@ Op1CloneAudioProcessorEditor::Op1CloneAudioProcessorEditor(Op1CloneAudioProcesso
     
     // ADSR visualization fade-out tracking
     isADSRDragging = false;
+    isResettingADSR = false;
     adsrFadeOutStartTime = 0;
     adsrVisualization.setAlpha(0.0f);  // Start invisible
     adsrVisualization.setVisible(false);  // Start hidden
@@ -370,8 +371,8 @@ Op1CloneAudioProcessorEditor::Op1CloneAudioProcessorEditor(Op1CloneAudioProcesso
                 updateADSR();  // Ensure values are up to date
                 repaint();
             }
-            // Reset fade-out timer (will be set on drag end)
-            adsrFadeOutStartTime = 0;
+            // Don't reset fade-out timer here - let it continue if already fading
+            // The fade-out will be properly set on drag end
         }
     };
     encoder5.onDragStart = [this]() {
@@ -399,9 +400,18 @@ Op1CloneAudioProcessorEditor::Op1CloneAudioProcessorEditor(Op1CloneAudioProcesso
         if (shiftToggleButton.getToggleState()) {
             // Shift mode: Encoder 5 does nothing (for now)
         } else {
+            // Set flag to prevent showing ADSR visualization during reset
+            isResettingADSR = true;
+            // Hide ADSR visualization when resetting
+            adsrVisualization.setAlpha(0.0f);
+            adsrVisualization.setVisible(false);
+            isADSRDragging = false;
+            adsrFadeOutStartTime = 0;
             // Normal mode: Attack default = 2.0ms (value = 0.0002)
             encoder5.setValue(0.0002f);
             encoder5.onValueChanged(0.0002f);
+            // Clear reset flag after value change
+            isResettingADSR = false;
         }
     };
     
@@ -433,8 +443,8 @@ Op1CloneAudioProcessorEditor::Op1CloneAudioProcessorEditor(Op1CloneAudioProcesso
                 updateADSR();  // Ensure values are up to date
                 repaint();
             }
-            // Reset fade-out timer (will be set on drag end)
-            adsrFadeOutStartTime = 0;
+            // Don't reset fade-out timer here - let it continue if already fading
+            // The fade-out will be properly set on drag end
         }
     };
     encoder6.onDragStart = [this]() {
@@ -462,9 +472,18 @@ Op1CloneAudioProcessorEditor::Op1CloneAudioProcessorEditor(Op1CloneAudioProcesso
         if (shiftToggleButton.getToggleState()) {
             // Shift mode: Encoder 6 does nothing (for now)
         } else {
+            // Set flag to prevent showing ADSR visualization during reset
+            isResettingADSR = true;
+            // Hide ADSR visualization when resetting
+            adsrVisualization.setAlpha(0.0f);
+            adsrVisualization.setVisible(false);
+            isADSRDragging = false;
+            adsrFadeOutStartTime = 0;
             // Normal mode: Decay default = 0.0ms (value = 0.0)
             encoder6.setValue(0.0f);
             encoder6.onValueChanged(0.0f);
+            // Clear reset flag after value change
+            isResettingADSR = false;
         }
     };
     
@@ -493,8 +512,8 @@ Op1CloneAudioProcessorEditor::Op1CloneAudioProcessorEditor(Op1CloneAudioProcesso
                 updateADSR();  // Ensure values are up to date
                 repaint();
             }
-            // Reset fade-out timer (will be set on drag end)
-            adsrFadeOutStartTime = 0;
+            // Don't reset fade-out timer here - let it continue if already fading
+            // The fade-out will be properly set on drag end
         }
     };
     encoder7.onDragStart = [this]() {
@@ -522,9 +541,18 @@ Op1CloneAudioProcessorEditor::Op1CloneAudioProcessorEditor(Op1CloneAudioProcesso
         if (shiftToggleButton.getToggleState()) {
             // Shift mode: Encoder 7 does nothing (for now)
         } else {
+            // Set flag to prevent showing ADSR visualization during reset
+            isResettingADSR = true;
+            // Hide ADSR visualization when resetting
+            adsrVisualization.setAlpha(0.0f);
+            adsrVisualization.setVisible(false);
+            isADSRDragging = false;
+            adsrFadeOutStartTime = 0;
             // Normal mode: Sustain default = 1.0 (value = 1.0)
             encoder7.setValue(1.0f);
             encoder7.onValueChanged(1.0f);
+            // Clear reset flag after value change
+            isResettingADSR = false;
         }
     };
     
@@ -556,8 +584,8 @@ Op1CloneAudioProcessorEditor::Op1CloneAudioProcessorEditor(Op1CloneAudioProcesso
                 updateADSR();  // Ensure values are up to date
                 repaint();
             }
-            // Reset fade-out timer (will be set on drag end)
-            adsrFadeOutStartTime = 0;
+            // Don't reset fade-out timer here - let it continue if already fading
+            // The fade-out will be properly set on drag end
         }
     };
     encoder8.onDragStart = [this]() {
@@ -585,9 +613,18 @@ Op1CloneAudioProcessorEditor::Op1CloneAudioProcessorEditor(Op1CloneAudioProcesso
         if (shiftToggleButton.getToggleState()) {
             // Shift mode: Encoder 8 does nothing (for now)
         } else {
+            // Set flag to prevent showing ADSR visualization during reset
+            isResettingADSR = true;
+            // Hide ADSR visualization when resetting
+            adsrVisualization.setAlpha(0.0f);
+            adsrVisualization.setVisible(false);
+            isADSRDragging = false;
+            adsrFadeOutStartTime = 0;
             // Normal mode: Release default = 20.0ms (value = 0.001)
             encoder8.setValue(0.001f);
             encoder8.onValueChanged(0.001f);
+            // Clear reset flag after value change
+            isResettingADSR = false;
         }
     };
     
@@ -878,9 +915,10 @@ void Op1CloneAudioProcessorEditor::timerCallback() {
     }
     
     // Handle ADSR visualization fade-out
-    if (!isADSRDragging && adsrFadeOutStartTime > 0) {
+    if (!isADSRDragging && adsrFadeOutStartTime > 0 && adsrVisualization.isVisible()) {
         int64_t currentTime = juce::Time::currentTimeMillis();
         int64_t elapsed = currentTime - adsrFadeOutStartTime;
+        const int64_t ADSR_FADE_OUT_DURATION_MS = 1000;  // 1 second fade-out
         
         if (elapsed >= ADSR_FADE_OUT_DURATION_MS) {
             // Fade complete - hide
@@ -892,6 +930,7 @@ void Op1CloneAudioProcessorEditor::timerCallback() {
             float fadeProgress = static_cast<float>(elapsed) / static_cast<float>(ADSR_FADE_OUT_DURATION_MS);
             float alpha = 1.0f - fadeProgress;
             adsrVisualization.setAlpha(alpha);
+            adsrVisualization.repaint();
         }
     }
 }
@@ -906,6 +945,10 @@ void Op1CloneAudioProcessorEditor::updateWaveform() {
     sampleRate = audioProcessor.getSourceSampleRate();
     
     // Ensure ADSR visualization is hidden on startup/update
+    // Remove from component tree if it was added
+    if (adsrVisualization.getParentComponent() != nullptr) {
+        adsrVisualization.getParentComponent()->removeChildComponent(&adsrVisualization);
+    }
     adsrVisualization.setAlpha(0.0f);
     adsrVisualization.setVisible(false);
     isADSRDragging = false;
