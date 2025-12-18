@@ -21,6 +21,9 @@ public:
     // Set root note for all voices
     void setRootNote(int rootNote);
     
+    // Enable or disable time-warp processing on all voices
+    void setWarpEnabled(bool enabled);
+    
     // Handle note on - allocates a voice
     void noteOn(int note, float velocity);
     
@@ -32,6 +35,9 @@ public:
     
     // Set gain for all voices
     void setGain(float gain);
+    
+    // Get debug info from first active voice (for UI)
+    void getDebugInfo(int& actualInN, int& outN, int& primeRemaining, int& nonZeroCount) const;
     
 private:
     std::array<SamplerVoice, MAX_VOICES> voices;

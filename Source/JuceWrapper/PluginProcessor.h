@@ -59,6 +59,15 @@ public:
     
     // Get MIDI input handler (for device management and UI)
     MidiInputHandler& getMidiInputHandler() { return midiInputHandler; }
+    
+    // Enable or disable time-warp processing (called from UI)
+    void setTimeWarpEnabled(bool enabled);
+    
+    // Debug info (updated from audio thread, read from UI thread)
+    std::atomic<int> debugLastActualInN{0};
+    std::atomic<int> debugLastOutN{0};
+    std::atomic<int> debugLastPrimeRemaining{0};
+    std::atomic<int> debugLastNonZeroOutCount{0};
 
 private:
     JuceEngineAdapter adapter;
@@ -74,6 +83,9 @@ private:
     
     // Sample loading helper
     void loadDefaultSample();
+    
+    // Time-warp enable flag (atomic, read on audio thread)
+    std::atomic<bool> timeWarpEnabled { true };
     
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(Op1CloneAudioProcessor)
 };

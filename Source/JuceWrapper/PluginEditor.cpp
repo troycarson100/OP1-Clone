@@ -1,5 +1,6 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
+#include "../Core/TimePitchError.h"
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <juce_core/juce_core.h>
@@ -44,6 +45,18 @@ Op1CloneAudioProcessorEditor::Op1CloneAudioProcessorEditor(Op1CloneAudioProcesso
     loadSampleButton.onClick = [this] { loadSampleButtonClicked(); };
     addAndMakeVisible(&loadSampleButton);
     
+    // Time-warp toggle (larger, more visible)
+    warpToggleButton.setButtonText("Time Warp");
+    warpToggleButton.setToggleState(true, juce::dontSendNotification);
+    warpToggleButton.setColour(juce::ToggleButton::textColourId, juce::Colours::white);
+    warpToggleButton.setColour(juce::ToggleButton::tickColourId, juce::Colours::lightgreen);
+    warpToggleButton.setColour(juce::ToggleButton::tickDisabledColourId, juce::Colours::grey);
+    // Use Button::Listener pattern for reliable state changes
+    warpToggleButton.addListener(this);
+    // Also set initial state
+    audioProcessor.setTimeWarpEnabled(true);
+    addAndMakeVisible(&warpToggleButton);
+    
     // Info label removed
     
     // Setup sample label
@@ -52,10 +65,25 @@ Op1CloneAudioProcessorEditor::Op1CloneAudioProcessorEditor(Op1CloneAudioProcesso
     sampleLabel.setColour(juce::Label::textColourId, juce::Colours::lightblue);
     addAndMakeVisible(&sampleLabel);
     
+    // Setup error status label
+    errorStatusLabel.setText("Status: OK", juce::dontSendNotification);
+    errorStatusLabel.setJustificationType(juce::Justification::centred);
+    errorStatusLabel.setColour(juce::Label::textColourId, juce::Colours::green);
+    addAndMakeVisible(&errorStatusLabel);
+    
+    // Setup debug label
+    debugLabel.setText("Debug: inN=0 outN=0 prime=0 nonZero=0", juce::dontSendNotification);
+    debugLabel.setJustificationType(juce::Justification::centred);
+    debugLabel.setColour(juce::Label::textColourId, juce::Colours::lightgrey);
+    addAndMakeVisible(&debugLabel);
+    
     currentSampleName = "Default (440Hz tone)";
     
     // Enable keyboard focus for MIDI keyboard input
     setWantsKeyboardFocus(true);
+    
+    // Start timer to update error status (every 100ms)
+    startTimer(100);
     
     // Update waveform with default sample
     updateWaveform();
@@ -107,6 +135,7 @@ Op1CloneAudioProcessorEditor::Op1CloneAudioProcessorEditor(Op1CloneAudioProcesso
 }
 
 Op1CloneAudioProcessorEditor::~Op1CloneAudioProcessorEditor() {
+    stopTimer();
 }
 
 void Op1CloneAudioProcessorEditor::paint(juce::Graphics& g) {
@@ -130,8 +159,17 @@ void Op1CloneAudioProcessorEditor::resized() {
     // Sample label at top
     sampleLabel.setBounds(leftArea.removeFromTop(25).reduced(5));
     
+    // Error status label
+    errorStatusLabel.setBounds(leftArea.removeFromTop(20).reduced(5));
+    
+    // Debug label
+    debugLabel.setBounds(leftArea.removeFromTop(20).reduced(5));
+    
     // Load sample button
     loadSampleButton.setBounds(leftArea.removeFromTop(35).reduced(5));
+    
+    // Time-warp toggle (larger, easier to click)
+    warpToggleButton.setBounds(leftArea.removeFromTop(40).reduced(5));
     
     // Gain/Volume encoder
     auto gainArea = leftArea.removeFromTop(120);
@@ -285,10 +323,45 @@ void Op1CloneAudioProcessorEditor::sendMidiNote(int note, float velocity, bool n
     audioProcessor.sendMidiNote(note, velocity, noteOn);
 }
 
+void Op1CloneAudioProcessorEditor::timerCallback() {
+    // Update error status from audio thread (safe, atomic read)
+    auto& errorStatus = Core::TimePitchErrorStatus::getInstance();
+    Core::TimePitchError error = errorStatus.getError();
+    
+    juce::String statusText = "Status: " + juce::String(errorStatus.getErrorString());
+    
+    if (error != Core::TimePitchError::OK) {
+        errorStatusLabel.setColour(juce::Label::textColourId, juce::Colours::red);
+    } else {
+        errorStatusLabel.setColour(juce::Label::textColourId, juce::Colours::green);
+    }
+    
+    errorStatusLabel.setText(statusText, juce::dontSendNotification);
+    
+    // Update debug info (safe, atomic read)
+    int actualInN = audioProcessor.debugLastActualInN.load(std::memory_order_acquire);
+    int outN = audioProcessor.debugLastOutN.load(std::memory_order_acquire);
+    int primeRemaining = audioProcessor.debugLastPrimeRemaining.load(std::memory_order_acquire);
+    int nonZeroCount = audioProcessor.debugLastNonZeroOutCount.load(std::memory_order_acquire);
+    
+    juce::String debugText = "Debug: inN=" + juce::String(actualInN) + 
+                             " outN=" + juce::String(outN) + 
+                             " prime=" + juce::String(primeRemaining) + 
+                             " nonZero=" + juce::String(nonZeroCount);
+    debugLabel.setText(debugText, juce::dontSendNotification);
+}
+
 void Op1CloneAudioProcessorEditor::updateWaveform() {
     // Get sample data from processor and update screen
     std::vector<float> sampleData;
     audioProcessor.getSampleDataForVisualization(sampleData);
     screenComponent.setSampleData(sampleData);
+}
+
+void Op1CloneAudioProcessorEditor::buttonClicked(juce::Button* button) {
+    if (button == &warpToggleButton) {
+        bool enabled = warpToggleButton.getToggleState();
+        audioProcessor.setTimeWarpEnabled(enabled);
+    }
 }
 

@@ -121,8 +121,19 @@ void Op1CloneAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     float gainValue = *parameters.getRawParameterValue("gain");
     adapter.setGain(gainValue);
     
+    // Update time-warp enable from atomic flag
+    adapter.setTimeWarpEnabled(timeWarpEnabled.load(std::memory_order_relaxed));
+    
     // Process through adapter
     adapter.processBlock(buffer, midiMessages);
+    
+    // Update debug info (read from adapter, safe atomic write)
+    int actualInN, outN, primeRemaining, nonZeroCount;
+    adapter.getDebugInfo(actualInN, outN, primeRemaining, nonZeroCount);
+    debugLastActualInN.store(actualInN, std::memory_order_relaxed);
+    debugLastOutN.store(outN, std::memory_order_relaxed);
+    debugLastPrimeRemaining.store(primeRemaining, std::memory_order_relaxed);
+    debugLastNonZeroOutCount.store(nonZeroCount, std::memory_order_relaxed);
 }
 
 bool Op1CloneAudioProcessor::hasEditor() const {
@@ -157,6 +168,10 @@ void Op1CloneAudioProcessor::loadDefaultSample() {
     
     // Pass to adapter
     adapter.setSample(testBuffer, 44100.0);
+}
+
+void Op1CloneAudioProcessor::setTimeWarpEnabled(bool enabled) {
+    timeWarpEnabled.store(enabled, std::memory_order_relaxed);
 }
 
 bool Op1CloneAudioProcessor::loadSampleFromFile(const juce::File& file) {

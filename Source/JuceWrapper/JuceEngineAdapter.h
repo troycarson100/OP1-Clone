@@ -25,11 +25,17 @@ public:
     // Set gain parameter
     void setGain(float gain);
     
+    // Enable or disable time-warp processing
+    void setTimeWarpEnabled(bool enabled);
+    
     // Get current gain
     float getGain() const;
     
     // Get sample data for visualization (thread-safe copy)
     void getSampleDataForVisualization(std::vector<float>& outData) const;
+    
+    // Get debug info (called from audio thread, safe to read from UI thread)
+    void getDebugInfo(int& actualInN, int& outN, int& primeRemaining, int& nonZeroCount) const;
     
 private:
     Core::SamplerEngine engine;

@@ -33,6 +33,14 @@ target_sources(Op1Clone PRIVATE
     Source/Core/SamplerVoice.cpp
     Source/Core/SamplerEngine.cpp
     Source/Core/VoiceManager.cpp
+    Source/Core/SimplePitchShifter.cpp
+    Source/Core/RingBufferF.cpp
+    Source/Core/WSOLA.cpp
+    Source/Core/Resampler.cpp
+    Source/Core/TimePitchProcessor.cpp
+    Source/Core/TimePitchError.cpp
+    Source/Core/GranularTimeWarp.cpp
+    Source/Core/SignalsmithTimePitch.cpp
 )
 
 # JUCE wrapper source files
@@ -63,6 +71,8 @@ target_sources(Op1Clone PRIVATE
 # Include directories
 target_include_directories(Op1Clone PUBLIC
     Source
+    ThirdParty
+    ThirdParty/signalsmith-linear
 )
 
 # Link JUCE modules

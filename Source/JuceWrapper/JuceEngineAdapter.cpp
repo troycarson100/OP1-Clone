@@ -60,6 +60,10 @@ void JuceEngineAdapter::setGain(float gain) {
     engine.setGain(gain);
 }
 
+void JuceEngineAdapter::setTimeWarpEnabled(bool enabled) {
+    engine.setTimeWarpEnabled(enabled);
+}
+
 float JuceEngineAdapter::getGain() const {
     return 1.0f; // Core engine doesn't expose getter, return default
 }
@@ -67,6 +71,10 @@ float JuceEngineAdapter::getGain() const {
 void JuceEngineAdapter::getSampleDataForVisualization(std::vector<float>& outData) const {
     // Thread-safe: copy sample data for visualization
     outData = sampleData;
+}
+
+void JuceEngineAdapter::getDebugInfo(int& actualInN, int& outN, int& primeRemaining, int& nonZeroCount) const {
+    engine.getDebugInfo(actualInN, outN, primeRemaining, nonZeroCount);
 }
 
 void JuceEngineAdapter::convertMidiBuffer(juce::MidiBuffer& midiMessages, int numSamples) {

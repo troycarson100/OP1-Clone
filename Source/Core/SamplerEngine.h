@@ -23,6 +23,9 @@ public:
     // Set root note (MIDI note that plays at original pitch, default 60)
     void setRootNote(int rootNote);
     
+    // Enable or disable time-warp processing on all voices
+    void setTimeWarpEnabled(bool enabled);
+    
     // Handle MIDI events (called from wrapper)
     void handleMidi(const MidiEvent* events, int count);
     
@@ -32,6 +35,9 @@ public:
     
     // Set gain parameter (0.0 to 1.0)
     void setGain(float gain);
+    
+    // Get debug info (for UI display)
+    void getDebugInfo(int& actualInN, int& outN, int& primeRemaining, int& nonZeroCount) const;
     
 private:
     VoiceManager voiceManager;

@@ -10,17 +10,23 @@
 #include <array>
 
 // Simple JUCE editor with gain slider
-class Op1CloneAudioProcessorEditor : public juce::AudioProcessorEditor {
+class Op1CloneAudioProcessorEditor : public juce::AudioProcessorEditor, 
+                                     public juce::Timer,
+                                     public juce::Button::Listener {
 public:
     Op1CloneAudioProcessorEditor(Op1CloneAudioProcessor&);
     ~Op1CloneAudioProcessorEditor() override;
 
     void paint(juce::Graphics&) override;
     void resized() override;
+    void timerCallback() override;  // Update error status display
     
     // Keyboard input handling
     bool keyPressed(const juce::KeyPress& key) override;
     bool keyStateChanged(bool isKeyDown) override;
+    
+    // Button::Listener
+    void buttonClicked(juce::Button* button) override;
 
 private:
     Op1CloneAudioProcessor& audioProcessor;
@@ -40,8 +46,11 @@ private:
     juce::Label gainLabel;
     juce::TextButton testButton;
     juce::TextButton loadSampleButton;
+    juce::ToggleButton warpToggleButton;
     juce::Label infoLabel;
     juce::Label sampleLabel;
+    juce::Label errorStatusLabel;  // Display TimePitchProcessor error status
+    juce::Label debugLabel;  // Display debug info (inN/outN/prime/nonZero)
     
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> gainAttachment;
     

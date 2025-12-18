@@ -31,6 +31,10 @@ void SamplerEngine::setRootNote(int rootNote) {
     voiceManager.setRootNote(rootNote);
 }
 
+void SamplerEngine::setTimeWarpEnabled(bool enabled) {
+    voiceManager.setWarpEnabled(enabled);
+}
+
 void SamplerEngine::handleMidi(const MidiEvent* events, int count) {
     for (int i = 0; i < count; ++i) {
         const MidiEvent& event = events[i];
@@ -70,6 +74,10 @@ void SamplerEngine::process(float** output, int numChannels, int numSamples) {
 void SamplerEngine::setGain(float gain) {
     targetGain = std::max(0.0f, std::min(1.0f, gain));
     gainSmoother.setTarget(targetGain, currentBlockSize);
+}
+
+void SamplerEngine::getDebugInfo(int& actualInN, int& outN, int& primeRemaining, int& nonZeroCount) const {
+    voiceManager.getDebugInfo(actualInN, outN, primeRemaining, nonZeroCount);
 }
 
 } // namespace Core

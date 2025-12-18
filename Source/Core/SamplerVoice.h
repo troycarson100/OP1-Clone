@@ -1,9 +1,12 @@
 #pragma once
 
+#include "ITimePitch.h"
+#include <memory>
+
 namespace Core {
 
 // Single sampler voice - portable, no JUCE
-// Plays back a loaded sample from memory
+// Plays back a loaded sample from memory with time-stretching pitch shifting
 class SamplerVoice {
 public:
     SamplerVoice();
@@ -37,6 +40,12 @@ public:
     // Set gain (0.0 to 1.0)
     void setGain(float gain);
     
+    // Enable or disable time-warp processing
+    void setWarpEnabled(bool enabled) { warpEnabled = enabled; }
+    
+    // Get debug info (for UI display)
+    void getDebugInfo(int& actualInN, int& outN, int& primeRemaining, int& nonZeroCount) const;
+    
 private:
     const float* sampleData;
     int sampleLength;
@@ -57,6 +66,31 @@ private:
     int releaseCounter;     // Current position in release phase
     bool inRelease;         // True when in release phase
     double currentSampleRate; // For calculating envelope times
+    
+    // Time-stretching pitch processor (abstract interface)
+    std::unique_ptr<ITimePitch> timePitchProcessor;
+    
+    // Buffers for processing
+    float* inputBuffer;     // Buffer for reading from sample
+    float* outputBuffer;    // Buffer for processor output
+    int bufferSize;
+    
+    // Sample read position (advances at original speed)
+    double sampleReadPos;
+    
+    // Enable/disable time-warp processing (when false, use simple pitch path)
+    bool warpEnabled;
+    
+    // Latency priming state
+    int primeRemainingSamples;
+    
+    // Processor prepared state (per-voice, not shared)
+    
+    // Debug info (updated during process, read from UI thread)
+    mutable int lastActualInN;
+    mutable int lastOutN;
+    mutable int lastPrimeRemaining;
+    mutable int lastNonZeroCount;
     
     // Helper: clamp value
     static float clamp(float value, float min, float max);
