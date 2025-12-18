@@ -1,7 +1,9 @@
 #include "JuceEngineAdapter.h"
 #include <algorithm>
 
-JuceEngineAdapter::JuceEngineAdapter() {
+JuceEngineAdapter::JuceEngineAdapter()
+    : sourceSampleRate(44100.0)
+{
 }
 
 JuceEngineAdapter::~JuceEngineAdapter() {
@@ -16,6 +18,7 @@ void JuceEngineAdapter::prepare(double sampleRate, int blockSize, int numChannel
 }
 
 void JuceEngineAdapter::setSample(juce::AudioBuffer<float>& buffer, double sourceSampleRate) {
+    this->sourceSampleRate = sourceSampleRate;
     // Extract sample data from JUCE buffer
     // For now, use left channel only (mono)
     int numSamples = buffer.getNumSamples();
@@ -107,6 +110,10 @@ float JuceEngineAdapter::getGain() const {
 void JuceEngineAdapter::getSampleDataForVisualization(std::vector<float>& outData) const {
     // Thread-safe: copy sample data for visualization
     outData = sampleData;
+}
+
+double JuceEngineAdapter::getSourceSampleRate() const {
+    return sourceSampleRate;
 }
 
 void JuceEngineAdapter::getDebugInfo(int& actualInN, int& outN, int& primeRemaining, int& nonZeroCount) const {

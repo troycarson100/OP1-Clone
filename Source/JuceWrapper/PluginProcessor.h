@@ -57,6 +57,9 @@ public:
     // Get sample data for visualization (thread-safe)
     void getSampleDataForVisualization(std::vector<float>& outData) const;
     
+    // Get source sample rate (for time calculations)
+    double getSourceSampleRate() const;
+    
     // Get MIDI input handler (for device management and UI)
     MidiInputHandler& getMidiInputHandler() { return midiInputHandler; }
     

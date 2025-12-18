@@ -46,7 +46,13 @@ private:
         ParameterDisplay() {
             label.setJustificationType(juce::Justification::centredLeft);
             label.setColour(juce::Label::textColourId, juce::Colours::white);
+            label.setFont(11.5f);  // Slightly bigger font for title
             addAndMakeVisible(&label);
+            
+            valueLabel.setJustificationType(juce::Justification::centredRight);
+            valueLabel.setColour(juce::Label::textColourId, juce::Colours::white);
+            valueLabel.setFont(11.5f);  // Same size for value
+            addAndMakeVisible(&valueLabel);
         }
         
         void setLabel(const juce::String& text) {
@@ -58,9 +64,13 @@ private:
             repaint();
         }
         
+        void setValueText(const juce::String& text) {
+            valueLabel.setText(text, juce::dontSendNotification);
+        }
+        
         void paint(juce::Graphics& g) override {
             auto bounds = getLocalBounds();
-            int labelHeight = 20;
+            int labelHeight = 18;  // Height for title/value row (slightly bigger for text)
             auto sliderArea = bounds.removeFromBottom(bounds.getHeight() - labelHeight);
             
             // Draw slider track (dark gray)
@@ -77,11 +87,14 @@ private:
         
         void resized() override {
             auto bounds = getLocalBounds();
-            label.setBounds(bounds.removeFromTop(20));
+            auto labelArea = bounds.removeFromTop(18);  // Height for title/value
+            label.setBounds(labelArea.removeFromLeft(labelArea.getWidth() / 2));  // Title on left
+            valueLabel.setBounds(labelArea);  // Value on right
         }
         
     private:
-        juce::Label label;
+        juce::Label label;  // Title label
+        juce::Label valueLabel;  // Value label
         float currentValue = 0.0f;
     };
     
@@ -147,11 +160,17 @@ private:
     int endPoint;
     float sampleGain;
     int sampleLength; // Store sample length for encoder mapping
+    double sampleRate; // Store sample rate for time calculations
     
     // Parameter display fade-out tracking
     int64_t lastEncoderChangeTime;  // Time when encoder was last moved (milliseconds)
     float parameterDisplayAlpha;  // Current alpha for fade-out (0.0 to 1.0)
     juce::String currentParameterText;  // Current parameter text to display
+    
+    // ADSR visualization fade-out tracking
+    bool isADSRDragging;  // True when any ADSR encoder (5-8) is being dragged
+    int64_t adsrFadeOutStartTime;  // Time when fade-out started (milliseconds)
+    static constexpr int64_t ADSR_FADE_OUT_DURATION_MS = 1000;  // 1 second fade-out
     
     // Update ADSR visualization and send to processor
     void updateADSR();

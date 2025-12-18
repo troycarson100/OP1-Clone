@@ -38,3 +38,4 @@ JUCE/
 *.vst
 *.app
 
+.cursor/debug.log

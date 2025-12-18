@@ -37,7 +37,32 @@ public:
     // Callback for button press
     std::function<void()> onButtonPressed;
     
+    // Callback for drag start/end
+    std::function<void()> onDragStart;
+    std::function<void()> onDragEnd;
+    
 private:
+    // Custom slider to track drag start/end
+    class DragTrackingSlider : public juce::Slider {
+    public:
+        DragTrackingSlider(EncoderComponent* parent) : parentComponent(parent) {}
+        
+        void startedDragging() override {
+            if (parentComponent && parentComponent->onDragStart) {
+                parentComponent->onDragStart();
+            }
+        }
+        
+        void stoppedDragging() override {
+            if (parentComponent && parentComponent->onDragEnd) {
+                parentComponent->onDragEnd();
+            }
+        }
+        
+    private:
+        EncoderComponent* parentComponent;
+    };
+    
     // Small transparent component that covers only the center circle to intercept clicks
     class CenterButtonOverlay : public juce::Component {
     public:
@@ -87,7 +112,7 @@ private:
     juce::String encoderName;
     
     // Endless encoder slider (0-100, wraps around)
-    juce::Slider encoderSlider;
+    DragTrackingSlider encoderSlider;
     
     // Push button in center - invisible button that draws nothing
     class InvisibleButton : public juce::TextButton {

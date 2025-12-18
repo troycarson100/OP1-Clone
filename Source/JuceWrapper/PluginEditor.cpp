@@ -21,7 +21,8 @@ Op1CloneAudioProcessorEditor::Op1CloneAudioProcessorEditor(Op1CloneAudioProcesso
     
     // Setup ADSR visualization (overlay on screen)
     adsrVisualization.setAlwaysOnTop(true);
-    adsrVisualization.setVisible(false);  // Hidden by default, shown when shift is enabled
+    adsrVisualization.setAlpha(0.0f);  // Start invisible
+    adsrVisualization.setVisible(false);  // Start hidden
     addChildComponent(&adsrVisualization);  // Use addChildComponent so it starts hidden
     
     // Setup ADSR label (overlay in top right of screen)
@@ -164,23 +165,37 @@ Op1CloneAudioProcessorEditor::Op1CloneAudioProcessorEditor(Op1CloneAudioProcesso
     adsrSustain = 1.0f;
     adsrReleaseMs = 20.0f;
     
+    // ADSR visualization fade-out tracking
+    isADSRDragging = false;
+    adsrFadeOutStartTime = 0;
+    adsrVisualization.setAlpha(0.0f);  // Start invisible
+    adsrVisualization.setVisible(false);  // Start hidden
+    
     // Initialize parameter displays with default values
     // Pitch: 0 semitones = 0.5 normalized
     paramDisplay1.setValue(0.5f);
+    paramDisplay1.setValueText("+0");
     // Start: 0 = 0.0 normalized
     paramDisplay2.setValue(0.0f);
+    paramDisplay2.setValueText("0ms");
     // End: full length = 1.0 normalized (will be updated after sample loads)
     paramDisplay3.setValue(1.0f);
+    paramDisplay3.setValueText("0ms");  // Will be updated when sample loads
     // Gain: 1.0x = 0.5 normalized
     paramDisplay4.setValue(0.5f);
+    paramDisplay4.setValueText("1.00x");
     // Attack: 2ms = 0.0002 normalized
     paramDisplay5.setValue(0.0002f);
+    paramDisplay5.setValueText("2ms");
     // Decay: 0ms = 0.0 normalized
     paramDisplay6.setValue(0.0f);
+    paramDisplay6.setValueText("0ms");
     // Sustain: 1.0 = 1.0 normalized
     paramDisplay7.setValue(1.0f);
+    paramDisplay7.setValueText("100%");
     // Release: 20ms = 0.001 normalized
     paramDisplay8.setValue(0.001f);
+    paramDisplay8.setValueText("20ms");
     
     // Initialize encoder 5-8 to ADSR defaults
     encoder5.setValue(0.0002f); // Attack default
@@ -193,12 +208,16 @@ Op1CloneAudioProcessorEditor::Op1CloneAudioProcessorEditor(Op1CloneAudioProcesso
         if (shiftToggleButton.getToggleState()) {
             // Shift mode: Encoder 1 does nothing (for now)
         } else {
-            // Encoder 1: Repitch (-12 to +12 semitones)
-            repitchSemitones = (value - 0.5f) * 24.0f; // Map 0-1 to -12 to +12
+            // Encoder 1: Repitch (-24 to +24 semitones)
+            repitchSemitones = (value - 0.5f) * 48.0f; // Map 0-1 to -24 to +24
             updateSampleEditing();
-            // Update parameter display 1 (Pitch) - normalize from -12/+12 to 0-1
-            float normalizedPitch = (repitchSemitones + 12.0f) / 24.0f;
+            // Update parameter display 1 (Pitch) - normalize from -24/+24 to 0-1
+            float normalizedPitch = (repitchSemitones + 24.0f) / 48.0f;
             paramDisplay1.setValue(normalizedPitch);
+            // Format value: show semitones with +/- sign
+            int semitones = static_cast<int>(std::round(repitchSemitones));
+            juce::String pitchText = (semitones >= 0 ? "+" : "") + juce::String(semitones);
+            paramDisplay1.setValueText(pitchText);
         }
     };
     encoder1.onButtonPressed = [this]() {
@@ -229,6 +248,13 @@ Op1CloneAudioProcessorEditor::Op1CloneAudioProcessorEditor(Op1CloneAudioProcesso
                 screenComponent.repaint();
                 // Update parameter display 2 (Start)
                 paramDisplay2.setValue(value);
+                // Format value: show as time position (e.g., "1.5s" or "500ms")
+                double startTimeSeconds = static_cast<double>(startPoint) / sampleRate;
+                if (startTimeSeconds >= 1.0) {
+                    paramDisplay2.setValueText(juce::String(startTimeSeconds, 2) + "s");
+                } else {
+                    paramDisplay2.setValueText(juce::String(static_cast<int>(startTimeSeconds * 1000.0)) + "ms");
+                }
             }
         }
     };
@@ -260,6 +286,13 @@ Op1CloneAudioProcessorEditor::Op1CloneAudioProcessorEditor(Op1CloneAudioProcesso
                 screenComponent.repaint();
                 // Update parameter display 3 (End)
                 paramDisplay3.setValue(value);
+                // Format value: show as time position (e.g., "1.5s" or "500ms")
+                double endTimeSeconds = static_cast<double>(endPoint) / sampleRate;
+                if (endTimeSeconds >= 1.0) {
+                    paramDisplay3.setValueText(juce::String(endTimeSeconds, 2) + "s");
+                } else {
+                    paramDisplay3.setValueText(juce::String(static_cast<int>(endTimeSeconds * 1000.0)) + "ms");
+                }
             }
         }
     };
@@ -286,6 +319,8 @@ Op1CloneAudioProcessorEditor::Op1CloneAudioProcessorEditor(Op1CloneAudioProcesso
             updateGainDisplay();
             // Update parameter display 4 (Gain) - normalize from 0-2.0 to 0-1
             paramDisplay4.setValue(value);
+            // Format value: show as multiplier (e.g., "1.5x")
+            paramDisplay4.setValueText(juce::String(sampleGain, 2) + "x");
         }
     };
     encoder4.onButtonPressed = [this]() {
@@ -309,6 +344,37 @@ Op1CloneAudioProcessorEditor::Op1CloneAudioProcessorEditor(Op1CloneAudioProcesso
             updateADSR();
             // Update parameter display 5 (Attack)
             paramDisplay5.setValue(value);
+            // Format value: show in ms, or seconds if >= 1000ms
+            if (adsrAttackMs >= 1000.0f) {
+                paramDisplay5.setValueText(juce::String(adsrAttackMs / 1000.0f, 2) + "s");
+            } else {
+                paramDisplay5.setValueText(juce::String(static_cast<int>(adsrAttackMs)) + "ms");
+            }
+            // Show ADSR visualization when value changes (only if not already showing)
+            if (!isADSRDragging) {
+                isADSRDragging = true;
+                updateADSR();  // Ensure values are up to date
+                adsrVisualization.setAlpha(1.0f);
+                adsrVisualization.setVisible(true);
+                repaint();
+            }
+            // Reset fade-out timer (will be set on drag end)
+            adsrFadeOutStartTime = 0;
+        }
+    };
+    encoder5.onDragStart = [this]() {
+        if (!shiftToggleButton.getToggleState()) {
+            isADSRDragging = true;
+            updateADSR();  // Update with current values
+            adsrVisualization.setAlpha(1.0f);
+            adsrVisualization.setVisible(true);
+            repaint();  // Repaint the entire editor to ensure visualization shows
+        }
+    };
+    encoder5.onDragEnd = [this]() {
+        if (!shiftToggleButton.getToggleState()) {
+            isADSRDragging = false;
+            adsrFadeOutStartTime = juce::Time::currentTimeMillis();
         }
     };
     encoder5.onButtonPressed = [this]() {
@@ -331,6 +397,37 @@ Op1CloneAudioProcessorEditor::Op1CloneAudioProcessorEditor(Op1CloneAudioProcesso
             updateADSR();
             // Update parameter display 6 (Decay)
             paramDisplay6.setValue(value);
+            // Format value: show in ms, or seconds if >= 1000ms
+            if (adsrDecayMs >= 1000.0f) {
+                paramDisplay6.setValueText(juce::String(adsrDecayMs / 1000.0f, 2) + "s");
+            } else {
+                paramDisplay6.setValueText(juce::String(static_cast<int>(adsrDecayMs)) + "ms");
+            }
+            // Show ADSR visualization when value changes (only if not already showing)
+            if (!isADSRDragging) {
+                isADSRDragging = true;
+                updateADSR();  // Ensure values are up to date
+                adsrVisualization.setAlpha(1.0f);
+                adsrVisualization.setVisible(true);
+                repaint();
+            }
+            // Reset fade-out timer (will be set on drag end)
+            adsrFadeOutStartTime = 0;
+        }
+    };
+    encoder6.onDragStart = [this]() {
+        if (!shiftToggleButton.getToggleState()) {
+            isADSRDragging = true;
+            updateADSR();  // Update with current values
+            adsrVisualization.setAlpha(1.0f);
+            adsrVisualization.setVisible(true);
+            repaint();  // Repaint the entire editor to ensure visualization shows
+        }
+    };
+    encoder6.onDragEnd = [this]() {
+        if (!shiftToggleButton.getToggleState()) {
+            isADSRDragging = false;
+            adsrFadeOutStartTime = juce::Time::currentTimeMillis();
         }
     };
     encoder6.onButtonPressed = [this]() {
@@ -353,6 +450,34 @@ Op1CloneAudioProcessorEditor::Op1CloneAudioProcessorEditor(Op1CloneAudioProcesso
             updateADSR();
             // Update parameter display 7 (Sustain)
             paramDisplay7.setValue(value);
+            // Format value: show as percentage
+            int sustainPercent = static_cast<int>(adsrSustain * 100.0f);
+            paramDisplay7.setValueText(juce::String(sustainPercent) + "%");
+            // Show ADSR visualization when value changes (only if not already showing)
+            if (!isADSRDragging) {
+                isADSRDragging = true;
+                updateADSR();  // Ensure values are up to date
+                adsrVisualization.setAlpha(1.0f);
+                adsrVisualization.setVisible(true);
+                repaint();
+            }
+            // Reset fade-out timer (will be set on drag end)
+            adsrFadeOutStartTime = 0;
+        }
+    };
+    encoder7.onDragStart = [this]() {
+        if (!shiftToggleButton.getToggleState()) {
+            isADSRDragging = true;
+            updateADSR();  // Update with current values
+            adsrVisualization.setAlpha(1.0f);
+            adsrVisualization.setVisible(true);
+            repaint();  // Repaint the entire editor to ensure visualization shows
+        }
+    };
+    encoder7.onDragEnd = [this]() {
+        if (!shiftToggleButton.getToggleState()) {
+            isADSRDragging = false;
+            adsrFadeOutStartTime = juce::Time::currentTimeMillis();
         }
     };
     encoder7.onButtonPressed = [this]() {
@@ -375,6 +500,37 @@ Op1CloneAudioProcessorEditor::Op1CloneAudioProcessorEditor(Op1CloneAudioProcesso
             updateADSR();
             // Update parameter display 8 (Release)
             paramDisplay8.setValue(value);
+            // Format value: show in ms, or seconds if >= 1000ms
+            if (adsrReleaseMs >= 1000.0f) {
+                paramDisplay8.setValueText(juce::String(adsrReleaseMs / 1000.0f, 2) + "s");
+            } else {
+                paramDisplay8.setValueText(juce::String(static_cast<int>(adsrReleaseMs)) + "ms");
+            }
+            // Show ADSR visualization when value changes (only if not already showing)
+            if (!isADSRDragging) {
+                isADSRDragging = true;
+                updateADSR();  // Ensure values are up to date
+                adsrVisualization.setAlpha(1.0f);
+                adsrVisualization.setVisible(true);
+                repaint();
+            }
+            // Reset fade-out timer (will be set on drag end)
+            adsrFadeOutStartTime = 0;
+        }
+    };
+    encoder8.onDragStart = [this]() {
+        if (!shiftToggleButton.getToggleState()) {
+            isADSRDragging = true;
+            updateADSR();  // Update with current values
+            adsrVisualization.setAlpha(1.0f);
+            adsrVisualization.setVisible(true);
+            repaint();  // Repaint the entire editor to ensure visualization shows
+        }
+    };
+    encoder8.onDragEnd = [this]() {
+        if (!shiftToggleButton.getToggleState()) {
+            isADSRDragging = false;
+            adsrFadeOutStartTime = juce::Time::currentTimeMillis();
         }
     };
     encoder8.onButtonPressed = [this]() {
@@ -474,12 +630,22 @@ void Op1CloneAudioProcessorEditor::resized() {
     paramDisplay7.setBounds(paramStartX + (paramDisplayWidth + paramDisplaySpacing) * 2, paramBottomRowY, paramDisplayWidth, paramDisplayHeight);
     paramDisplay8.setBounds(paramStartX + (paramDisplayWidth + paramDisplaySpacing) * 3, paramBottomRowY, paramDisplayWidth, paramDisplayHeight);
     
-    // ADSR visualization overlay (60% of screen height, centered)
-    int adsrHeight = static_cast<int>(screenComponentBounds.getHeight() * 0.6f);
-    int adsrY = screenComponentBounds.getY() + (screenComponentBounds.getHeight() - adsrHeight) / 2;
-    adsrVisualization.setBounds(screenComponentBounds.getX(),
+    // ADSR visualization overlay - centered on waveform area within screen component
+    // Get waveform bounds from screen component (relative to screen component)
+    auto waveformBounds = screenComponent.getWaveformBounds();
+    // Convert to editor coordinates (waveformBounds is relative to screenComponent, need to add screenComponent position)
+    juce::Rectangle<int> waveformBoundsInEditor(
+        screenComponentBounds.getX() + waveformBounds.getX(),
+        screenComponentBounds.getY() + waveformBounds.getY(),
+        waveformBounds.getWidth(),
+        waveformBounds.getHeight()
+    );
+    int adsrHeight = static_cast<int>(waveformBoundsInEditor.getHeight() * 0.4f);  // 40% of waveform height
+    // Center it vertically on the waveform
+    int adsrY = waveformBoundsInEditor.getCentreY() - adsrHeight / 2;
+    adsrVisualization.setBounds(waveformBoundsInEditor.getX(),
                                 adsrY,
-                                screenComponentBounds.getWidth(),
+                                waveformBoundsInEditor.getWidth(),
                                 adsrHeight);
     
     // ADSR label (overlay in top right of screen)
@@ -663,6 +829,24 @@ void Op1CloneAudioProcessorEditor::timerCallback() {
             }
         }
     }
+    
+    // Handle ADSR visualization fade-out
+    if (!isADSRDragging && adsrFadeOutStartTime > 0) {
+        int64_t currentTime = juce::Time::currentTimeMillis();
+        int64_t elapsed = currentTime - adsrFadeOutStartTime;
+        
+        if (elapsed >= ADSR_FADE_OUT_DURATION_MS) {
+            // Fade complete - hide
+            adsrVisualization.setAlpha(0.0f);
+            adsrVisualization.setVisible(false);
+            adsrFadeOutStartTime = 0;
+        } else {
+            // Calculate fade progress (0.0 to 1.0)
+            float fadeProgress = static_cast<float>(elapsed) / static_cast<float>(ADSR_FADE_OUT_DURATION_MS);
+            float alpha = 1.0f - fadeProgress;
+            adsrVisualization.setAlpha(alpha);
+        }
+    }
 }
 
 void Op1CloneAudioProcessorEditor::updateWaveform() {
@@ -670,6 +854,15 @@ void Op1CloneAudioProcessorEditor::updateWaveform() {
     std::vector<float> sampleData;
     audioProcessor.getSampleDataForVisualization(sampleData);
     screenComponent.setSampleData(sampleData);
+    
+    // Get source sample rate from processor (for time calculations)
+    sampleRate = audioProcessor.getSourceSampleRate();
+    
+    // Ensure ADSR visualization is hidden on startup/update
+    adsrVisualization.setAlpha(0.0f);
+    adsrVisualization.setVisible(false);
+    isADSRDragging = false;
+    adsrFadeOutStartTime = 0;
     
     // Update sample length for encoder mapping
     int newSampleLength = static_cast<int>(sampleData.size());
@@ -695,15 +888,58 @@ void Op1CloneAudioProcessorEditor::updateWaveform() {
         updateWaveformVisualization();
         
         // Initialize parameter displays with current values
-        float normalizedPitch = (repitchSemitones + 12.0f) / 24.0f;
+        float normalizedPitch = (repitchSemitones + 24.0f) / 48.0f;
         paramDisplay1.setValue(normalizedPitch);
-        paramDisplay2.setValue(startPoint > 0 ? static_cast<float>(startPoint) / static_cast<float>(sampleLength) : 0.0f);
-        paramDisplay3.setValue(endPoint > 0 ? static_cast<float>(endPoint) / static_cast<float>(sampleLength) : 1.0f);
+        int semitones = static_cast<int>(std::round(repitchSemitones));
+        paramDisplay1.setValueText((semitones >= 0 ? "+" : "") + juce::String(semitones));
+        
+        float startValue = startPoint > 0 ? static_cast<float>(startPoint) / static_cast<float>(sampleLength) : 0.0f;
+        paramDisplay2.setValue(startValue);
+        double startTimeSeconds = static_cast<double>(startPoint) / sampleRate;
+        if (startTimeSeconds >= 1.0) {
+            paramDisplay2.setValueText(juce::String(startTimeSeconds, 2) + "s");
+        } else {
+            paramDisplay2.setValueText(juce::String(static_cast<int>(startTimeSeconds * 1000.0)) + "ms");
+        }
+        
+        float endValue = endPoint > 0 ? static_cast<float>(endPoint) / static_cast<float>(sampleLength) : 1.0f;
+        paramDisplay3.setValue(endValue);
+        double endTimeSeconds = static_cast<double>(endPoint) / sampleRate;
+        if (endTimeSeconds >= 1.0) {
+            paramDisplay3.setValueText(juce::String(endTimeSeconds, 2) + "s");
+        } else {
+            paramDisplay3.setValueText(juce::String(static_cast<int>(endTimeSeconds * 1000.0)) + "ms");
+        }
+        
         paramDisplay4.setValue(sampleGain / 2.0f);
-        paramDisplay5.setValue(adsrAttackMs / 10000.0f);
-        paramDisplay6.setValue(adsrDecayMs / 20000.0f);
+        paramDisplay4.setValueText(juce::String(sampleGain, 2) + "x");
+        
+        float attackValue = adsrAttackMs / 10000.0f;
+        paramDisplay5.setValue(attackValue);
+        if (adsrAttackMs >= 1000.0f) {
+            paramDisplay5.setValueText(juce::String(adsrAttackMs / 1000.0f, 2) + "s");
+        } else {
+            paramDisplay5.setValueText(juce::String(static_cast<int>(adsrAttackMs)) + "ms");
+        }
+        
+        float decayValue = adsrDecayMs / 20000.0f;
+        paramDisplay6.setValue(decayValue);
+        if (adsrDecayMs >= 1000.0f) {
+            paramDisplay6.setValueText(juce::String(adsrDecayMs / 1000.0f, 2) + "s");
+        } else {
+            paramDisplay6.setValueText(juce::String(static_cast<int>(adsrDecayMs)) + "ms");
+        }
+        
         paramDisplay7.setValue(adsrSustain);
-        paramDisplay8.setValue(adsrReleaseMs / 20000.0f);
+        paramDisplay7.setValueText(juce::String(static_cast<int>(adsrSustain * 100.0f)) + "%");
+        
+        float releaseValue = adsrReleaseMs / 20000.0f;
+        paramDisplay8.setValue(releaseValue);
+        if (adsrReleaseMs >= 1000.0f) {
+            paramDisplay8.setValueText(juce::String(adsrReleaseMs / 1000.0f, 2) + "s");
+        } else {
+            paramDisplay8.setValueText(juce::String(static_cast<int>(adsrReleaseMs)) + "ms");
+        }
     }
 }
 
@@ -712,18 +948,18 @@ void Op1CloneAudioProcessorEditor::buttonClicked(juce::Button* button) {
         bool enabled = warpToggleButton.getToggleState();
         audioProcessor.setTimeWarpEnabled(enabled);
     } else if (button == &shiftToggleButton) {
-        // Shift button toggled - show/hide ADSR controls
+        // Shift button toggled - show/hide ADSR label
         bool shiftEnabled = shiftToggleButton.getToggleState();
-        adsrVisualization.setVisible(shiftEnabled);
         adsrLabel.setVisible(shiftEnabled);
         
         // Hide gain display when shift is enabled to avoid overlap with ADSR label
         if (shiftEnabled) {
             gainDisplayLabel.setVisible(false);
-            // Update ADSR visualization with current values
-            updateADSR();
+        } else {
+            gainDisplayLabel.setVisible(true);
         }
         
+        // ADSR visualization is now controlled by drag events, not shift button
         // Force repaint to show/hide components
         repaint();
     }
@@ -731,8 +967,10 @@ void Op1CloneAudioProcessorEditor::buttonClicked(juce::Button* button) {
 
 void Op1CloneAudioProcessorEditor::updateADSR()
 {
-    // Update visualization
-    adsrVisualization.setADSR(adsrAttackMs, adsrDecayMs, adsrSustain, adsrReleaseMs);
+    // Update visualization (only if visible/dragging)
+    if (isADSRDragging || (adsrVisualization.isVisible() && adsrVisualization.getAlpha() > 0.0f)) {
+        adsrVisualization.setADSR(adsrAttackMs, adsrDecayMs, adsrSustain, adsrReleaseMs);
+    }
     
     // Send to processor
     audioProcessor.setADSR(adsrAttackMs, adsrDecayMs, adsrSustain, adsrReleaseMs);

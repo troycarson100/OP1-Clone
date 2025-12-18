@@ -22,6 +22,9 @@ public:
     void setEndPoint(int sampleIndex);
     void setSampleGain(float gain);
     
+    // Get waveform component bounds (for ADSR overlay positioning)
+    juce::Rectangle<int> getWaveformBounds() const { return waveformComponent.getBounds(); }
+    
 private:
     WaveformComponent waveformComponent;
     

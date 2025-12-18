@@ -49,6 +49,9 @@ public:
     // Get sample data for visualization (thread-safe copy)
     void getSampleDataForVisualization(std::vector<float>& outData) const;
     
+    // Get source sample rate (for time calculations)
+    double getSourceSampleRate() const;
+    
     // Get debug info (called from audio thread, safe to read from UI thread)
     void getDebugInfo(int& actualInN, int& outN, int& primeRemaining, int& nonZeroCount) const;
     
@@ -61,6 +64,9 @@ private:
     
     // Sample data storage (owned by adapter)
     std::vector<float> sampleData;
+    
+    // Source sample rate (stored when sample is loaded)
+    double sourceSampleRate;
     
     // Helper: convert JUCE MIDI buffer to Core MidiEvent array
     void convertMidiBuffer(juce::MidiBuffer& midiMessages, int numSamples);

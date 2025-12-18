@@ -26,8 +26,8 @@ void ScreenComponent::paint(juce::Graphics& g) {
 void ScreenComponent::resized() {
     // Waveform takes up most of the screen, but leave space at bottom for parameter displays
     auto bounds = getLocalBounds().reduced(5);
-    // Reserve space at bottom for parameter displays (2 rows of 40px + spacing = ~90px)
-    int paramDisplayAreaHeight = 90;
+    // Reserve space at bottom for parameter displays (2 rows of 35px + spacing = ~80px)
+    int paramDisplayAreaHeight = 80;
     bounds.removeFromBottom(paramDisplayAreaHeight);
     waveformComponent.setBounds(bounds);
 }

@@ -6,6 +6,7 @@ ADSRVisualizationComponent::ADSRVisualizationComponent()
     , sustainLevel(1.0f)
     , releaseMs(20.0f)
     , maxTimeMs(1000.0f)  // Default 1 second display range
+    , currentAlpha(0.0f)  // Start invisible
 {
     setOpaque(false);  // Transparent background
 }
@@ -20,7 +21,10 @@ void ADSRVisualizationComponent::setADSR(float attack, float decay, float sustai
     decayMs = decay;
     sustainLevel = sustain;
     releaseMs = release;
-    repaint();
+    // Only repaint if we're actually visible (alpha > 0)
+    if (currentAlpha > 0.0f) {
+        repaint();
+    }
 }
 
 float ADSRVisualizationComponent::timeToX(float timeMs, float width) const
@@ -37,6 +41,11 @@ float ADSRVisualizationComponent::amplitudeToY(float amplitude, float height) co
 
 void ADSRVisualizationComponent::paint(juce::Graphics& g)
 {
+    // Don't paint if alpha is 0 or component is not visible
+    if (currentAlpha <= 0.0f || !isVisible()) {
+        return;
+    }
+    
     auto bounds = getLocalBounds().reduced(5.0f); // Add padding
     float width = static_cast<float>(bounds.getWidth());
     float height = static_cast<float>(bounds.getHeight());
@@ -125,6 +134,7 @@ void ADSRVisualizationComponent::paint(juce::Graphics& g)
     
     // Draw the envelope path with light blue color (like the reference)
     juce::Colour lightBlue = juce::Colour(0xFF87CEEB); // Light blue (sky blue)
+    lightBlue = lightBlue.withAlpha(currentAlpha); // Apply alpha
     g.setColour(lightBlue);
     g.strokePath(envelopePath, juce::PathStrokeType(2.0f));
     

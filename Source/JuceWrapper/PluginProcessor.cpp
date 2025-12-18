@@ -243,6 +243,10 @@ void Op1CloneAudioProcessor::getSampleDataForVisualization(std::vector<float>& o
     adapter.getSampleDataForVisualization(outData);
 }
 
+double Op1CloneAudioProcessor::getSourceSampleRate() const {
+    return adapter.getSourceSampleRate();
+}
+
 void Op1CloneAudioProcessor::triggerTestNote() {
     // Thread-safe lock-free: queue MIDI message for next audio block
     sendMidiNote(60, 1.0f, true);

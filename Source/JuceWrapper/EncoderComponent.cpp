@@ -3,6 +3,7 @@
 
 EncoderComponent::EncoderComponent(const juce::String& name)
     : encoderName(name)
+    , encoderSlider(this)  // Pass parent to custom slider
     , rotationAngle(0.0f)
     , lastSliderValue(50.0f)
     , buttonPressed(false)
@@ -110,11 +111,26 @@ void EncoderComponent::mouseDown(const juce::MouseEvent& e) {
     // Let the center button handle its own clicks
     // This is mainly for visual feedback
     buttonPressed = false;
+    
+    // Check if mouse is on the slider (not the center button)
+    if (!centerButton.getBounds().contains(e.getPosition())) {
+        // Trigger drag start callback
+        if (onDragStart) {
+            onDragStart();
+        }
+    }
+    
     repaint();
 }
 
 void EncoderComponent::mouseUp(const juce::MouseEvent& e) {
     buttonPressed = false;
+    
+    // Trigger drag end callback
+    if (onDragEnd) {
+        onDragEnd();
+    }
+    
     repaint();
 }
 

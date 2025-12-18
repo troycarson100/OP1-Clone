@@ -18,12 +18,18 @@ public:
     // Set maximum time range for display (in milliseconds)
     void setMaxTimeRange(float maxMs) { maxTimeMs = maxMs; repaint(); }
     
+    // Set alpha/opacity (0.0 to 1.0)
+    void setAlpha(float alpha) { currentAlpha = juce::jlimit(0.0f, 1.0f, alpha); repaint(); }
+    
+    float getAlpha() const { return currentAlpha; }
+    
 private:
     float attackMs;
     float decayMs;
     float sustainLevel;  // 0.0 to 1.0
     float releaseMs;
     float maxTimeMs;  // Maximum time range to display (default 1000ms = 1 second)
+    float currentAlpha;  // Current alpha/opacity (0.0 to 1.0)
     
     // Helper: Convert time (ms) to x coordinate
     float timeToX(float timeMs, float width) const;
