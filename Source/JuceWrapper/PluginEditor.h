@@ -43,21 +43,18 @@ private:
     EncoderComponent encoder4;
     
     juce::Slider gainSlider;
-    juce::Label gainLabel;
-    juce::TextButton testButton;
+    juce::Label volumeLabel;  // "Volume" text under the knob
+    juce::Label sampleNameLabel;  // Sample name displayed above screen
     juce::TextButton loadSampleButton;
     juce::ToggleButton warpToggleButton;
+    juce::TextButton shiftToggleButton;  // Square toggle button for "shift"
     juce::Label infoLabel;
-    juce::Label sampleLabel;
-    juce::Label errorStatusLabel;  // Display TimePitchProcessor error status
-    juce::Label debugLabel;  // Display debug info (inN/outN/prime/nonZero)
     
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> gainAttachment;
     
     // File chooser must be kept alive during async operation
     std::unique_ptr<juce::FileChooser> fileChooser;
     
-    void testButtonClicked();
     void loadSampleButtonClicked();
     
     // Keyboard to MIDI mapping

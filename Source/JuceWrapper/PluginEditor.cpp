@@ -29,16 +29,20 @@ Op1CloneAudioProcessorEditor::Op1CloneAudioProcessorEditor(Op1CloneAudioProcesso
     gainAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         audioProcessor.getParameters(), "gain", gainSlider);
     
-    // Setup label
-    gainLabel.setText("Gain", juce::dontSendNotification);
-    gainLabel.attachToComponent(&gainSlider, false);
-    gainLabel.setJustificationType(juce::Justification::centred);
-    addAndMakeVisible(&gainLabel);
+    // Setup gain label (removed - will use volumeLabel instead)
     
-    // Setup test button
-    testButton.setButtonText("Test (Note 60)");
-    testButton.onClick = [this] { testButtonClicked(); };
-    addAndMakeVisible(&testButton);
+    // Setup volume label (text under the knob)
+    volumeLabel.setText("Volume", juce::dontSendNotification);
+    volumeLabel.setJustificationType(juce::Justification::centred);
+    volumeLabel.setColour(juce::Label::textColourId, juce::Colours::white);
+    addAndMakeVisible(&volumeLabel);
+    
+    // Setup sample name label (overlay on bottom left of screen)
+    sampleNameLabel.setText("Default (440Hz tone)", juce::dontSendNotification);
+    sampleNameLabel.setJustificationType(juce::Justification::centredLeft);
+    sampleNameLabel.setColour(juce::Label::textColourId, juce::Colours::white);
+    addAndMakeVisible(&sampleNameLabel);
+    sampleNameLabel.setAlwaysOnTop(true);
     
     // Setup load sample button
     loadSampleButton.setButtonText("Load Sample...");
@@ -57,25 +61,18 @@ Op1CloneAudioProcessorEditor::Op1CloneAudioProcessorEditor(Op1CloneAudioProcesso
     audioProcessor.setTimeWarpEnabled(true);
     addAndMakeVisible(&warpToggleButton);
     
+    // Shift toggle button (square, lit up when enabled, greyed out when disabled)
+    shiftToggleButton.setButtonText("shift");
+    shiftToggleButton.setClickingTogglesState(true);
+    shiftToggleButton.setToggleState(false, juce::dontSendNotification);
+    shiftToggleButton.setColour(juce::TextButton::buttonColourId, juce::Colours::darkgrey);
+    shiftToggleButton.setColour(juce::TextButton::buttonOnColourId, juce::Colours::lightblue);
+    shiftToggleButton.setColour(juce::TextButton::textColourOffId, juce::Colours::grey);
+    shiftToggleButton.setColour(juce::TextButton::textColourOnId, juce::Colours::white);
+    shiftToggleButton.addListener(this);
+    addAndMakeVisible(&shiftToggleButton);
+    
     // Info label removed
-    
-    // Setup sample label
-    sampleLabel.setText("Sample: Default (440Hz tone)", juce::dontSendNotification);
-    sampleLabel.setJustificationType(juce::Justification::centred);
-    sampleLabel.setColour(juce::Label::textColourId, juce::Colours::lightblue);
-    addAndMakeVisible(&sampleLabel);
-    
-    // Setup error status label
-    errorStatusLabel.setText("Status: OK", juce::dontSendNotification);
-    errorStatusLabel.setJustificationType(juce::Justification::centred);
-    errorStatusLabel.setColour(juce::Label::textColourId, juce::Colours::green);
-    addAndMakeVisible(&errorStatusLabel);
-    
-    // Setup debug label
-    debugLabel.setText("Debug: inN=0 outN=0 prime=0 nonZero=0", juce::dontSendNotification);
-    debugLabel.setJustificationType(juce::Justification::centred);
-    debugLabel.setColour(juce::Label::textColourId, juce::Colours::lightgrey);
-    addAndMakeVisible(&debugLabel);
     
     currentSampleName = "Default (440Hz tone)";
     
@@ -153,36 +150,37 @@ void Op1CloneAudioProcessorEditor::resized() {
     auto bounds = getLocalBounds();
     bounds.removeFromTop(25); // Title area
     
-    // Left side: Controls (sample import, volume, test button)
-    auto leftArea = bounds.removeFromLeft(200).reduced(10);
+    // Top left: Master gain knob
+    auto topLeftArea = bounds.removeFromLeft(150).removeFromTop(150).reduced(10);
+    auto gainArea = topLeftArea;
+    gainSlider.setBounds(gainArea.removeFromTop(120).reduced(10));
+    volumeLabel.setBounds(gainArea.reduced(5));  // "Volume" text under the knob
     
-    // Sample label at top
-    sampleLabel.setBounds(leftArea.removeFromTop(25).reduced(5));
+    // Left side: Time Warp and Shift toggles (before screen)
+    auto leftControlsArea = bounds.removeFromLeft(200).reduced(10);
     
-    // Error status label
-    errorStatusLabel.setBounds(leftArea.removeFromTop(20).reduced(5));
+    // Time-warp toggle
+    warpToggleButton.setBounds(leftControlsArea.removeFromTop(40).reduced(5));
     
-    // Debug label
-    debugLabel.setBounds(leftArea.removeFromTop(20).reduced(5));
-    
-    // Load sample button
-    loadSampleButton.setBounds(leftArea.removeFromTop(35).reduced(5));
-    
-    // Time-warp toggle (larger, easier to click)
-    warpToggleButton.setBounds(leftArea.removeFromTop(40).reduced(5));
-    
-    // Gain/Volume encoder
-    auto gainArea = leftArea.removeFromTop(120);
-    gainSlider.setBounds(gainArea.removeFromTop(100).reduced(10));
-    gainLabel.setBounds(gainArea.reduced(5));
-    
-    // Test button
-    testButton.setBounds(leftArea.removeFromTop(35).reduced(5));
+    // Shift toggle button (square)
+    auto shiftButtonArea = leftControlsArea.removeFromTop(50);
+    int shiftButtonSize = 50;  // Square button
+    shiftToggleButton.setBounds(shiftButtonArea.removeFromLeft(shiftButtonSize).reduced(5));
     
     // Middle: Screen component (40% less wide)
-    auto screenBounds = bounds.removeFromLeft(bounds.getWidth() * 0.65 * 0.6); // 65% * 60% = 39% of remaining (40% reduction)
-    screenBounds.setHeight(static_cast<int>(screenBounds.getHeight() * 0.6)); // 40% reduction = 60% of original
+    auto screenArea = bounds.removeFromLeft(bounds.getWidth() * 0.65 * 0.6); // 65% * 60% = 39% of remaining (40% reduction)
+    auto screenBounds = screenArea.removeFromTop(static_cast<int>(screenArea.getHeight() * 0.6)); // 40% reduction = 60% of original
     screenComponent.setBounds(screenBounds.reduced(10));
+    
+    // Sample name label (overlay on bottom left of screen)
+    auto screenComponentBounds = screenComponent.getBounds();
+    sampleNameLabel.setBounds(screenComponentBounds.getX() + 10, 
+                              screenComponentBounds.getBottom() - 25, 
+                              screenComponentBounds.getWidth() - 20, 
+                              20);
+    
+    // Under screen: Load sample button (directly below the screen)
+    loadSampleButton.setBounds(screenArea.removeFromTop(40).reduced(10));
     
     // Right side: Encoders in a horizontal row (moved up and left, closer to screen)
     auto encoderArea = bounds.reduced(10);
@@ -203,11 +201,6 @@ void Op1CloneAudioProcessorEditor::resized() {
     midiStatusComponent.setBounds(statusBounds);
 }
 
-void Op1CloneAudioProcessorEditor::testButtonClicked() {
-    // Trigger test note through processor
-    audioProcessor.triggerTestNote();
-}
-
 void Op1CloneAudioProcessorEditor::loadSampleButtonClicked() {
     // Open file picker for WAV files
     // FileChooser must be stored as member to stay alive during async operation
@@ -225,17 +218,14 @@ void Op1CloneAudioProcessorEditor::loadSampleButtonClicked() {
             if (audioProcessor.loadSampleFromFile(selectedFile)) {
                 // Update UI
                 currentSampleName = selectedFile.getFileName();
-                sampleLabel.setText("Sample: " + currentSampleName, juce::dontSendNotification);
-                sampleLabel.setColour(juce::Label::textColourId, juce::Colours::lightblue);
+                sampleNameLabel.setText(currentSampleName, juce::dontSendNotification);
                 
                 // Update waveform visualization
                 updateWaveform();
                 
                 repaint();
             } else {
-                // Show error in label
-                sampleLabel.setText("Error loading: " + selectedFile.getFileName(), juce::dontSendNotification);
-                sampleLabel.setColour(juce::Label::textColourId, juce::Colours::red);
+                // Error loading - could show a message box or just continue
                 repaint();
             }
         }
@@ -324,31 +314,7 @@ void Op1CloneAudioProcessorEditor::sendMidiNote(int note, float velocity, bool n
 }
 
 void Op1CloneAudioProcessorEditor::timerCallback() {
-    // Update error status from audio thread (safe, atomic read)
-    auto& errorStatus = Core::TimePitchErrorStatus::getInstance();
-    Core::TimePitchError error = errorStatus.getError();
-    
-    juce::String statusText = "Status: " + juce::String(errorStatus.getErrorString());
-    
-    if (error != Core::TimePitchError::OK) {
-        errorStatusLabel.setColour(juce::Label::textColourId, juce::Colours::red);
-    } else {
-        errorStatusLabel.setColour(juce::Label::textColourId, juce::Colours::green);
-    }
-    
-    errorStatusLabel.setText(statusText, juce::dontSendNotification);
-    
-    // Update debug info (safe, atomic read)
-    int actualInN = audioProcessor.debugLastActualInN.load(std::memory_order_acquire);
-    int outN = audioProcessor.debugLastOutN.load(std::memory_order_acquire);
-    int primeRemaining = audioProcessor.debugLastPrimeRemaining.load(std::memory_order_acquire);
-    int nonZeroCount = audioProcessor.debugLastNonZeroOutCount.load(std::memory_order_acquire);
-    
-    juce::String debugText = "Debug: inN=" + juce::String(actualInN) + 
-                             " outN=" + juce::String(outN) + 
-                             " prime=" + juce::String(primeRemaining) + 
-                             " nonZero=" + juce::String(nonZeroCount);
-    debugLabel.setText(debugText, juce::dontSendNotification);
+    // Timer callback - no longer updating labels
 }
 
 void Op1CloneAudioProcessorEditor::updateWaveform() {
@@ -362,6 +328,9 @@ void Op1CloneAudioProcessorEditor::buttonClicked(juce::Button* button) {
     if (button == &warpToggleButton) {
         bool enabled = warpToggleButton.getToggleState();
         audioProcessor.setTimeWarpEnabled(enabled);
+    } else if (button == &shiftToggleButton) {
+        // Shift button toggled - visual state is handled by button colours
+        // No action needed yet, just visual feedback
     }
 }
 
