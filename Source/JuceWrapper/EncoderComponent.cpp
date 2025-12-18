@@ -21,18 +21,10 @@ EncoderComponent::EncoderComponent(const juce::String& name)
     encoderSlider.setColour(juce::Slider::thumbColourId, juce::Colours::transparentBlack);
     addAndMakeVisible(&encoderSlider);
     
-    // Setup center button (circular, no text, fully transparent - we draw it ourselves)
-    centerButton.setButtonText("");
+    // Setup center button - invisible button in the center (handled by InvisibleButton class)
     centerButton.addListener(this);
-    centerButton.setClickingTogglesState(false);
-    centerButton.setColour(juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
-    centerButton.setColour(juce::TextButton::buttonOnColourId, juce::Colours::transparentBlack);
-    centerButton.setColour(juce::TextButton::textColourOffId, juce::Colours::transparentBlack);
-    centerButton.setColour(juce::TextButton::textColourOnId, juce::Colours::transparentBlack);
-    // Button is invisible - we draw it ourselves and handle clicks in mouseDown
-    centerButton.setComponentEffect(nullptr);
-    centerButton.setVisible(false); // Hide the button, we handle clicks ourselves
-    addChildComponent(&centerButton); // Add as child but don't make visible
+    centerButton.setAlwaysOnTop(true); // Put on top so it receives clicks
+    addAndMakeVisible(&centerButton);
     
     setOpaque(false);
 }
@@ -107,36 +99,18 @@ void EncoderComponent::resized() {
     // Encoder slider takes full area (but we draw custom)
     encoderSlider.setBounds(bounds);
     
-    // Center button (perfect circle, matches the drawn circle)
-    int buttonRadius = static_cast<int>(size * 0.35f);
-    int buttonSize = buttonRadius * 2;
+    // Center button - 20x20px button in the exact center
     int centerX = bounds.getCentreX();
     int centerY = bounds.getCentreY();
-    centerButton.setBounds(centerX - buttonRadius, centerY - buttonRadius, buttonSize, buttonSize);
+    int buttonSize = 20; // 20px by 20px
+    centerButton.setBounds(centerX - buttonSize / 2, centerY - buttonSize / 2, buttonSize, buttonSize);
 }
 
 void EncoderComponent::mouseDown(const juce::MouseEvent& e) {
-    // Check if click is within the circular button area
-    auto bounds = getLocalBounds();
-    int size = juce::jmin(bounds.getWidth(), bounds.getHeight());
-    int centerX = bounds.getCentreX();
-    int centerY = bounds.getCentreY();
-    int buttonRadius = static_cast<int>(size * 0.35f);
-    
-    int dx = e.x - centerX;
-    int dy = e.y - centerY;
-    int distanceSquared = dx * dx + dy * dy;
-    int radiusSquared = buttonRadius * buttonRadius;
-    
-    // If click is within the circular button area, trigger button press
-    if (distanceSquared <= radiusSquared) {
-        buttonPressed = true;
-        repaint(); // Update visual feedback
-        
-        if (onButtonPressed) {
-            onButtonPressed();
-        }
-    }
+    // Let the center button handle its own clicks
+    // This is mainly for visual feedback
+    buttonPressed = false;
+    repaint();
 }
 
 void EncoderComponent::mouseUp(const juce::MouseEvent& e) {
@@ -146,6 +120,7 @@ void EncoderComponent::mouseUp(const juce::MouseEvent& e) {
 
 void EncoderComponent::buttonClicked(juce::Button* button) {
     if (button == &centerButton) {
+        // Small 10x10px button was clicked - trigger reset
         if (onButtonPressed) {
             onButtonPressed();
         }

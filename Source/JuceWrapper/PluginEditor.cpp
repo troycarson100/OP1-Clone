@@ -149,7 +149,16 @@ Op1CloneAudioProcessorEditor::Op1CloneAudioProcessorEditor(Op1CloneAudioProcesso
         }
     };
     encoder1.onButtonPressed = [this]() {
-        // Encoder 1 button pressed
+        // Encoder 1 button pressed - reset to default
+        if (shiftToggleButton.getToggleState()) {
+            // Shift mode: Attack default = 2.0ms (value = 0.0002)
+            encoder1.setValue(0.0002f);
+            encoder1.onValueChanged(0.0002f);
+        } else {
+            // Normal mode: Repitch default = 0 semitones (value = 0.5)
+            encoder1.setValue(0.5f);
+            encoder1.onValueChanged(0.5f);
+        }
     };
     
     encoder2.onValueChanged = [this](float value) {
@@ -175,7 +184,16 @@ Op1CloneAudioProcessorEditor::Op1CloneAudioProcessorEditor(Op1CloneAudioProcesso
         }
     };
     encoder2.onButtonPressed = [this]() {
-        // Encoder 2 button pressed
+        // Encoder 2 button pressed - reset to default
+        if (shiftToggleButton.getToggleState()) {
+            // Shift mode: Decay default = 0.0ms (value = 0.0)
+            encoder2.setValue(0.0f);
+            encoder2.onValueChanged(0.0f);
+        } else {
+            // Normal mode: Start point default = 0 (value = 0.0)
+            encoder2.setValue(0.0f);
+            encoder2.onValueChanged(0.0f);
+        }
     };
     
     encoder3.onValueChanged = [this](float value) {
@@ -201,7 +219,16 @@ Op1CloneAudioProcessorEditor::Op1CloneAudioProcessorEditor(Op1CloneAudioProcesso
         }
     };
     encoder3.onButtonPressed = [this]() {
-        // Encoder 3 button pressed
+        // Encoder 3 button pressed - reset to default
+        if (shiftToggleButton.getToggleState()) {
+            // Shift mode: Sustain default = 1.0 (value = 1.0)
+            encoder3.setValue(1.0f);
+            encoder3.onValueChanged(1.0f);
+        } else {
+            // Normal mode: End point default = full length (value = 1.0)
+            encoder3.setValue(1.0f);
+            encoder3.onValueChanged(1.0f);
+        }
     };
     
     encoder4.onValueChanged = [this](float value) {
@@ -221,7 +248,16 @@ Op1CloneAudioProcessorEditor::Op1CloneAudioProcessorEditor(Op1CloneAudioProcesso
         }
     };
     encoder4.onButtonPressed = [this]() {
-        // Encoder 4 button pressed
+        // Encoder 4 button pressed - reset to default
+        if (shiftToggleButton.getToggleState()) {
+            // Shift mode: Release default = 20.0ms (value = 0.001)
+            encoder4.setValue(0.001f);
+            encoder4.onValueChanged(0.001f);
+        } else {
+            // Normal mode: Sample gain default = 1.0x (value = 0.5)
+            encoder4.setValue(0.5f);
+            encoder4.onValueChanged(0.5f);
+        }
     };
     
     // Make encoders visible
