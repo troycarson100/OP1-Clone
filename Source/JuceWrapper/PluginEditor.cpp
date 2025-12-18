@@ -471,16 +471,24 @@ void Op1CloneAudioProcessorEditor::updateWaveform() {
     screenComponent.setSampleData(sampleData);
     
     // Update sample length for encoder mapping
-    sampleLength = static_cast<int>(sampleData.size());
+    int newSampleLength = static_cast<int>(sampleData.size());
     
-    // Initialize start/end points if needed (first time loading or if they're invalid)
-    if (sampleLength > 0) {
-        if (endPoint == 0 || endPoint > sampleLength) {
-            endPoint = sampleLength;
-        }
-        if (startPoint >= endPoint) {
+    // If this is a new sample (different length) or first load, reset to full sample view
+    bool isNewSample = (newSampleLength != sampleLength);
+    
+    if (newSampleLength > 0) {
+        if (isNewSample || endPoint == 0 || endPoint > newSampleLength || startPoint >= endPoint) {
+            // Reset to show full sample
             startPoint = 0;
+            endPoint = newSampleLength;
+            
+            // Update encoder positions to match (encoder2 = 0.0 for start, encoder3 = 1.0 for end)
+            encoder2.setValue(0.0f);
+            encoder3.setValue(1.0f);
         }
+        
+        sampleLength = newSampleLength;
+        
         // Update the processor with initial values
         updateSampleEditing();
         updateWaveformVisualization();
