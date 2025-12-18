@@ -82,12 +82,40 @@ Op1CloneAudioProcessorEditor::Op1CloneAudioProcessorEditor(Op1CloneAudioProcesso
     volumeLabel.setColour(juce::Label::textColourId, juce::Colours::white);
     addAndMakeVisible(&volumeLabel);
     
-    // Setup sample name label (overlay on bottom left of screen)
+    // Setup sample name label (overlay on top of screen)
     sampleNameLabel.setText("Default (440Hz tone)", juce::dontSendNotification);
     sampleNameLabel.setJustificationType(juce::Justification::centredLeft);
     sampleNameLabel.setColour(juce::Label::textColourId, juce::Colours::white);
     addAndMakeVisible(&sampleNameLabel);
     sampleNameLabel.setAlwaysOnTop(true);
+    
+    // Setup parameter displays at bottom of screen
+    paramDisplay1.setLabel("PITCH");
+    paramDisplay2.setLabel("START");
+    paramDisplay3.setLabel("END");
+    paramDisplay4.setLabel("GAIN");
+    paramDisplay5.setLabel("ATTACK");
+    paramDisplay6.setLabel("DECAY");
+    paramDisplay7.setLabel("SUSTAIN");
+    paramDisplay8.setLabel("RELEASE");
+    
+    paramDisplay1.setAlwaysOnTop(true);
+    paramDisplay2.setAlwaysOnTop(true);
+    paramDisplay3.setAlwaysOnTop(true);
+    paramDisplay4.setAlwaysOnTop(true);
+    paramDisplay5.setAlwaysOnTop(true);
+    paramDisplay6.setAlwaysOnTop(true);
+    paramDisplay7.setAlwaysOnTop(true);
+    paramDisplay8.setAlwaysOnTop(true);
+    
+    addAndMakeVisible(&paramDisplay1);
+    addAndMakeVisible(&paramDisplay2);
+    addAndMakeVisible(&paramDisplay3);
+    addAndMakeVisible(&paramDisplay4);
+    addAndMakeVisible(&paramDisplay5);
+    addAndMakeVisible(&paramDisplay6);
+    addAndMakeVisible(&paramDisplay7);
+    addAndMakeVisible(&paramDisplay8);
     
     // Setup load sample button
     loadSampleButton.setButtonText("Load Sample...");
@@ -136,28 +164,47 @@ Op1CloneAudioProcessorEditor::Op1CloneAudioProcessorEditor(Op1CloneAudioProcesso
     adsrSustain = 1.0f;
     adsrReleaseMs = 20.0f;
     
-    // Setup encoders - control ADSR when shift is enabled
+    // Initialize parameter displays with default values
+    // Pitch: 0 semitones = 0.5 normalized
+    paramDisplay1.setValue(0.5f);
+    // Start: 0 = 0.0 normalized
+    paramDisplay2.setValue(0.0f);
+    // End: full length = 1.0 normalized (will be updated after sample loads)
+    paramDisplay3.setValue(1.0f);
+    // Gain: 1.0x = 0.5 normalized
+    paramDisplay4.setValue(0.5f);
+    // Attack: 2ms = 0.0002 normalized
+    paramDisplay5.setValue(0.0002f);
+    // Decay: 0ms = 0.0 normalized
+    paramDisplay6.setValue(0.0f);
+    // Sustain: 1.0 = 1.0 normalized
+    paramDisplay7.setValue(1.0f);
+    // Release: 20ms = 0.001 normalized
+    paramDisplay8.setValue(0.001f);
+    
+    // Initialize encoder 5-8 to ADSR defaults
+    encoder5.setValue(0.0002f); // Attack default
+    encoder6.setValue(0.0f);    // Decay default
+    encoder7.setValue(1.0f);    // Sustain default
+    encoder8.setValue(0.001f);  // Release default
+    
+    // Setup encoders - ADSR is now on encoders 5-8 (shift off), top 4 do nothing in shift mode
     encoder1.onValueChanged = [this](float value) {
         if (shiftToggleButton.getToggleState()) {
-            // Encoder 1: Attack (0-10000ms = 0-10 seconds)
-            adsrAttackMs = value * 10000.0f;
-            updateADSR();
-            // Update parameter display
-            updateParameterDisplay("A", adsrAttackMs);
+            // Shift mode: Encoder 1 does nothing (for now)
         } else {
             // Encoder 1: Repitch (-12 to +12 semitones)
             repitchSemitones = (value - 0.5f) * 24.0f; // Map 0-1 to -12 to +12
             updateSampleEditing();
-            // Update parameter display (show in semitones)
-            updateParameterDisplay("Pitch", repitchSemitones);
+            // Update parameter display 1 (Pitch) - normalize from -12/+12 to 0-1
+            float normalizedPitch = (repitchSemitones + 12.0f) / 24.0f;
+            paramDisplay1.setValue(normalizedPitch);
         }
     };
     encoder1.onButtonPressed = [this]() {
         // Encoder 1 button pressed - reset to default
         if (shiftToggleButton.getToggleState()) {
-            // Shift mode: Attack default = 2.0ms (value = 0.0002)
-            encoder1.setValue(0.0002f);
-            encoder1.onValueChanged(0.0002f);
+            // Shift mode: Encoder 1 does nothing (for now)
         } else {
             // Normal mode: Repitch default = 0 semitones (value = 0.5)
             encoder1.setValue(0.5f);
@@ -167,11 +214,7 @@ Op1CloneAudioProcessorEditor::Op1CloneAudioProcessorEditor(Op1CloneAudioProcesso
     
     encoder2.onValueChanged = [this](float value) {
         if (shiftToggleButton.getToggleState()) {
-            // Encoder 2: Decay (0-20000ms = 0-20 seconds)
-            adsrDecayMs = value * 20000.0f;
-            updateADSR();
-            // Update parameter display
-            updateParameterDisplay("D", adsrDecayMs);
+            // Shift mode: Encoder 2 does nothing (for now)
         } else {
             // Encoder 2: Start point (0 to sampleLength)
             if (sampleLength > 0) {
@@ -184,15 +227,15 @@ Op1CloneAudioProcessorEditor::Op1CloneAudioProcessorEditor(Op1CloneAudioProcesso
                 updateWaveformVisualization();
                 // Force repaint
                 screenComponent.repaint();
+                // Update parameter display 2 (Start)
+                paramDisplay2.setValue(value);
             }
         }
     };
     encoder2.onButtonPressed = [this]() {
         // Encoder 2 button pressed - reset to default
         if (shiftToggleButton.getToggleState()) {
-            // Shift mode: Decay default = 0.0ms (value = 0.0)
-            encoder2.setValue(0.0f);
-            encoder2.onValueChanged(0.0f);
+            // Shift mode: Encoder 2 does nothing (for now)
         } else {
             // Normal mode: Start point default = 0 (value = 0.0)
             encoder2.setValue(0.0f);
@@ -202,11 +245,7 @@ Op1CloneAudioProcessorEditor::Op1CloneAudioProcessorEditor(Op1CloneAudioProcesso
     
     encoder3.onValueChanged = [this](float value) {
         if (shiftToggleButton.getToggleState()) {
-            // Encoder 3: Sustain (0.0-1.0)
-            adsrSustain = value;
-            updateADSR();
-            // Update parameter display (show as percentage)
-            updateParameterDisplay("S", adsrSustain * 100.0f);  // Convert to percentage
+            // Shift mode: Encoder 3 does nothing (for now)
         } else {
             // Encoder 3: End point (0 to sampleLength)
             if (sampleLength > 0) {
@@ -219,15 +258,15 @@ Op1CloneAudioProcessorEditor::Op1CloneAudioProcessorEditor(Op1CloneAudioProcesso
                 updateWaveformVisualization();
                 // Force repaint
                 screenComponent.repaint();
+                // Update parameter display 3 (End)
+                paramDisplay3.setValue(value);
             }
         }
     };
     encoder3.onButtonPressed = [this]() {
         // Encoder 3 button pressed - reset to default
         if (shiftToggleButton.getToggleState()) {
-            // Shift mode: Sustain default = 1.0 (value = 1.0)
-            encoder3.setValue(1.0f);
-            encoder3.onValueChanged(1.0f);
+            // Shift mode: Encoder 3 does nothing (for now)
         } else {
             // Normal mode: End point default = full length (value = 1.0)
             encoder3.setValue(1.0f);
@@ -237,11 +276,7 @@ Op1CloneAudioProcessorEditor::Op1CloneAudioProcessorEditor(Op1CloneAudioProcesso
     
     encoder4.onValueChanged = [this](float value) {
         if (shiftToggleButton.getToggleState()) {
-            // Encoder 4: Release (0-20000ms = 0-20 seconds)
-            adsrReleaseMs = value * 20000.0f;
-            updateADSR();
-            // Update parameter display
-            updateParameterDisplay("R", adsrReleaseMs);
+            // Shift mode: Encoder 4 does nothing (for now)
         } else {
             // Encoder 4: Sample gain (0.0 to 2.0)
             sampleGain = value * 2.0f;
@@ -249,18 +284,107 @@ Op1CloneAudioProcessorEditor::Op1CloneAudioProcessorEditor(Op1CloneAudioProcesso
             updateWaveformVisualization();
             // Update gain display in top right
             updateGainDisplay();
+            // Update parameter display 4 (Gain) - normalize from 0-2.0 to 0-1
+            paramDisplay4.setValue(value);
         }
     };
     encoder4.onButtonPressed = [this]() {
         // Encoder 4 button pressed - reset to default
         if (shiftToggleButton.getToggleState()) {
-            // Shift mode: Release default = 20.0ms (value = 0.001)
-            encoder4.setValue(0.001f);
-            encoder4.onValueChanged(0.001f);
+            // Shift mode: Encoder 4 does nothing (for now)
         } else {
             // Normal mode: Sample gain default = 1.0x (value = 0.5)
             encoder4.setValue(0.5f);
             encoder4.onValueChanged(0.5f);
+        }
+    };
+    
+    // Setup encoders 5-8 - control ADSR when shift is OFF
+    encoder5.onValueChanged = [this](float value) {
+        if (shiftToggleButton.getToggleState()) {
+            // Shift mode: Encoder 5 does nothing (for now)
+        } else {
+            // Encoder 5: Attack (0-10000ms = 0-10 seconds)
+            adsrAttackMs = value * 10000.0f;
+            updateADSR();
+            // Update parameter display 5 (Attack)
+            paramDisplay5.setValue(value);
+        }
+    };
+    encoder5.onButtonPressed = [this]() {
+        // Encoder 5 button pressed - reset to default
+        if (shiftToggleButton.getToggleState()) {
+            // Shift mode: Encoder 5 does nothing (for now)
+        } else {
+            // Normal mode: Attack default = 2.0ms (value = 0.0002)
+            encoder5.setValue(0.0002f);
+            encoder5.onValueChanged(0.0002f);
+        }
+    };
+    
+    encoder6.onValueChanged = [this](float value) {
+        if (shiftToggleButton.getToggleState()) {
+            // Shift mode: Encoder 6 does nothing (for now)
+        } else {
+            // Encoder 6: Decay (0-20000ms = 0-20 seconds)
+            adsrDecayMs = value * 20000.0f;
+            updateADSR();
+            // Update parameter display 6 (Decay)
+            paramDisplay6.setValue(value);
+        }
+    };
+    encoder6.onButtonPressed = [this]() {
+        // Encoder 6 button pressed - reset to default
+        if (shiftToggleButton.getToggleState()) {
+            // Shift mode: Encoder 6 does nothing (for now)
+        } else {
+            // Normal mode: Decay default = 0.0ms (value = 0.0)
+            encoder6.setValue(0.0f);
+            encoder6.onValueChanged(0.0f);
+        }
+    };
+    
+    encoder7.onValueChanged = [this](float value) {
+        if (shiftToggleButton.getToggleState()) {
+            // Shift mode: Encoder 7 does nothing (for now)
+        } else {
+            // Encoder 7: Sustain (0.0-1.0)
+            adsrSustain = value;
+            updateADSR();
+            // Update parameter display 7 (Sustain)
+            paramDisplay7.setValue(value);
+        }
+    };
+    encoder7.onButtonPressed = [this]() {
+        // Encoder 7 button pressed - reset to default
+        if (shiftToggleButton.getToggleState()) {
+            // Shift mode: Encoder 7 does nothing (for now)
+        } else {
+            // Normal mode: Sustain default = 1.0 (value = 1.0)
+            encoder7.setValue(1.0f);
+            encoder7.onValueChanged(1.0f);
+        }
+    };
+    
+    encoder8.onValueChanged = [this](float value) {
+        if (shiftToggleButton.getToggleState()) {
+            // Shift mode: Encoder 8 does nothing (for now)
+        } else {
+            // Encoder 8: Release (0-20000ms = 0-20 seconds)
+            adsrReleaseMs = value * 20000.0f;
+            updateADSR();
+            // Update parameter display 8 (Release)
+            paramDisplay8.setValue(value);
+        }
+    };
+    encoder8.onButtonPressed = [this]() {
+        // Encoder 8 button pressed - reset to default
+        if (shiftToggleButton.getToggleState()) {
+            // Shift mode: Encoder 8 does nothing (for now)
+        } else {
+            // Normal mode: Release default = 20.0ms (value = 0.001)
+            encoder8.setValue(0.001f);
+            encoder8.onValueChanged(0.001f);
         }
     };
     
@@ -306,17 +430,49 @@ void Op1CloneAudioProcessorEditor::resized() {
     int shiftButtonWidth = 80;  // Wide enough for "shift" text
     shiftToggleButton.setBounds(shiftButtonArea.removeFromLeft(shiftButtonWidth).reduced(5));
     
-    // Middle: Screen component (40% less wide)
-    auto screenArea = bounds.removeFromLeft(bounds.getWidth() * 0.65 * 0.6); // 65% * 60% = 39% of remaining (40% reduction)
+    // Middle: Screen component (30% wider than before)
+    auto screenArea = bounds.removeFromLeft(bounds.getWidth() * 0.65 * 0.78); // 65% * 78% = ~51% (30% wider than 39%)
     auto screenBounds = screenArea.removeFromTop(static_cast<int>(screenArea.getHeight() * 0.6)); // 40% reduction = 60% of original
     screenComponent.setBounds(screenBounds.reduced(10));
     
-    // Sample name label (overlay on bottom left of screen)
+    // Sample name label (overlay on top of screen)
     auto screenComponentBounds = screenComponent.getBounds();
     sampleNameLabel.setBounds(screenComponentBounds.getX() + 10, 
-                              screenComponentBounds.getBottom() - 25, 
+                              screenComponentBounds.getY() + 5, 
                               screenComponentBounds.getWidth() - 20, 
                               20);
+    
+    // Parameter displays at bottom of screen module (2 rows of 4)
+    // Position them at the very bottom, ensuring they don't overlap the waveform
+    // Add 5px padding around the group
+    int paramDisplayHeight = 40;
+    int paramDisplaySpacing = 5;
+    int paramGroupPadding = 5; // Padding around the entire group
+    int paramBottomPadding = 5; // Padding from bottom edge
+    int totalParamHeight = paramDisplayHeight * 2 + paramDisplaySpacing;
+    
+    // Calculate available width for displays (with group padding)
+    int availableWidth = screenComponentBounds.getWidth() - (paramGroupPadding * 2);
+    int paramDisplayWidth = (availableWidth - paramDisplaySpacing * 3) / 4;
+    
+    // Calculate X start position (with left padding)
+    int paramStartX = screenComponentBounds.getX() + paramGroupPadding;
+    
+    // Calculate Y positions from the bottom of the screen component
+    int paramBottomRowY = screenComponentBounds.getBottom() - paramBottomPadding - paramDisplayHeight;
+    int paramTopRowY = paramBottomRowY - paramDisplayHeight - paramDisplaySpacing;
+    
+    // Top row: Pitch, Start, End, Gain
+    paramDisplay1.setBounds(paramStartX, paramTopRowY, paramDisplayWidth, paramDisplayHeight);
+    paramDisplay2.setBounds(paramStartX + paramDisplayWidth + paramDisplaySpacing, paramTopRowY, paramDisplayWidth, paramDisplayHeight);
+    paramDisplay3.setBounds(paramStartX + (paramDisplayWidth + paramDisplaySpacing) * 2, paramTopRowY, paramDisplayWidth, paramDisplayHeight);
+    paramDisplay4.setBounds(paramStartX + (paramDisplayWidth + paramDisplaySpacing) * 3, paramTopRowY, paramDisplayWidth, paramDisplayHeight);
+    
+    // Bottom row: Attack, Decay, Sustain, Release
+    paramDisplay5.setBounds(paramStartX, paramBottomRowY, paramDisplayWidth, paramDisplayHeight);
+    paramDisplay6.setBounds(paramStartX + paramDisplayWidth + paramDisplaySpacing, paramBottomRowY, paramDisplayWidth, paramDisplayHeight);
+    paramDisplay7.setBounds(paramStartX + (paramDisplayWidth + paramDisplaySpacing) * 2, paramBottomRowY, paramDisplayWidth, paramDisplayHeight);
+    paramDisplay8.setBounds(paramStartX + (paramDisplayWidth + paramDisplaySpacing) * 3, paramBottomRowY, paramDisplayWidth, paramDisplayHeight);
     
     // ADSR visualization overlay (60% of screen height, centered)
     int adsrHeight = static_cast<int>(screenComponentBounds.getHeight() * 0.6f);
@@ -537,6 +693,17 @@ void Op1CloneAudioProcessorEditor::updateWaveform() {
         // Update the processor with initial values
         updateSampleEditing();
         updateWaveformVisualization();
+        
+        // Initialize parameter displays with current values
+        float normalizedPitch = (repitchSemitones + 12.0f) / 24.0f;
+        paramDisplay1.setValue(normalizedPitch);
+        paramDisplay2.setValue(startPoint > 0 ? static_cast<float>(startPoint) / static_cast<float>(sampleLength) : 0.0f);
+        paramDisplay3.setValue(endPoint > 0 ? static_cast<float>(endPoint) / static_cast<float>(sampleLength) : 1.0f);
+        paramDisplay4.setValue(sampleGain / 2.0f);
+        paramDisplay5.setValue(adsrAttackMs / 10000.0f);
+        paramDisplay6.setValue(adsrDecayMs / 20000.0f);
+        paramDisplay7.setValue(adsrSustain);
+        paramDisplay8.setValue(adsrReleaseMs / 20000.0f);
     }
 }
 

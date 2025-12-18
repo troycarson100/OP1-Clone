@@ -40,6 +40,61 @@ private:
     juce::Label parameterDisplayLabel;  // Parameter value display (e.g., "A 1s") in top left
     juce::Label gainDisplayLabel;  // Gain display (e.g., "Gain 1.5x") in top right
     
+    // Parameter display component (label + progress bar)
+    class ParameterDisplay : public juce::Component {
+    public:
+        ParameterDisplay() {
+            label.setJustificationType(juce::Justification::centredLeft);
+            label.setColour(juce::Label::textColourId, juce::Colours::white);
+            addAndMakeVisible(&label);
+        }
+        
+        void setLabel(const juce::String& text) {
+            label.setText(text, juce::dontSendNotification);
+        }
+        
+        void setValue(float value) {
+            currentValue = juce::jlimit(0.0f, 1.0f, value);
+            repaint();
+        }
+        
+        void paint(juce::Graphics& g) override {
+            auto bounds = getLocalBounds();
+            int labelHeight = 20;
+            auto sliderArea = bounds.removeFromBottom(bounds.getHeight() - labelHeight);
+            
+            // Draw slider track (dark gray)
+            g.setColour(juce::Colour(0xFF333333));
+            g.fillRect(sliderArea);
+            
+            // Draw slider fill (white) based on value
+            int fillWidth = static_cast<int>(sliderArea.getWidth() * currentValue);
+            if (fillWidth > 0) {
+                g.setColour(juce::Colours::white);
+                g.fillRect(sliderArea.removeFromLeft(fillWidth));
+            }
+        }
+        
+        void resized() override {
+            auto bounds = getLocalBounds();
+            label.setBounds(bounds.removeFromTop(20));
+        }
+        
+    private:
+        juce::Label label;
+        float currentValue = 0.0f;
+    };
+    
+    // 8 parameter displays at bottom of screen
+    ParameterDisplay paramDisplay1;  // Pitch
+    ParameterDisplay paramDisplay2;  // Start
+    ParameterDisplay paramDisplay3;  // End
+    ParameterDisplay paramDisplay4;  // Gain
+    ParameterDisplay paramDisplay5;  // Attack
+    ParameterDisplay paramDisplay6;  // Decay
+    ParameterDisplay paramDisplay7;  // Sustain
+    ParameterDisplay paramDisplay8;  // Release
+    
     // MIDI status display
     MidiStatusComponent midiStatusComponent;
     
