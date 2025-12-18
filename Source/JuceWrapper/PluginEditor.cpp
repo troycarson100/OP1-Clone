@@ -264,10 +264,10 @@ void Op1CloneAudioProcessorEditor::resized() {
     // Time-warp toggle
     warpToggleButton.setBounds(leftControlsArea.removeFromTop(40).reduced(5));
     
-    // Shift toggle button (square)
+    // Shift toggle button (wide enough for "shift" text)
     auto shiftButtonArea = leftControlsArea.removeFromTop(50);
-    int shiftButtonSize = 50;  // Square button
-    shiftToggleButton.setBounds(shiftButtonArea.removeFromLeft(shiftButtonSize).reduced(5));
+    int shiftButtonWidth = 80;  // Wide enough for "shift" text
+    shiftToggleButton.setBounds(shiftButtonArea.removeFromLeft(shiftButtonWidth).reduced(5));
     
     // Middle: Screen component (40% less wide)
     auto screenArea = bounds.removeFromLeft(bounds.getWidth() * 0.65 * 0.6); // 65% * 60% = 39% of remaining (40% reduction)
@@ -497,7 +497,9 @@ void Op1CloneAudioProcessorEditor::buttonClicked(juce::Button* button) {
         adsrVisualization.setVisible(shiftEnabled);
         adsrLabel.setVisible(shiftEnabled);
         
+        // Hide gain display when shift is enabled to avoid overlap with ADSR label
         if (shiftEnabled) {
+            gainDisplayLabel.setVisible(false);
             // Update ADSR visualization with current values
             updateADSR();
         }
@@ -572,6 +574,12 @@ void Op1CloneAudioProcessorEditor::updateWaveformVisualization() {
 }
 
 void Op1CloneAudioProcessorEditor::updateGainDisplay() {
+    // Don't show gain display when shift is enabled (ADSR label is shown instead)
+    if (shiftToggleButton.getToggleState()) {
+        gainDisplayLabel.setVisible(false);
+        return;
+    }
+    
     // Show gain value in top right corner (e.g., "Gain 1.5x")
     juce::String gainText = "Gain " + juce::String(sampleGain, 2) + "x";
     gainDisplayLabel.setText(gainText, juce::dontSendNotification);
