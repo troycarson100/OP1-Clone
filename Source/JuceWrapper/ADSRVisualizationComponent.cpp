@@ -9,6 +9,8 @@ ADSRVisualizationComponent::ADSRVisualizationComponent()
     , currentAlpha(0.0f)  // Start invisible
 {
     setOpaque(false);  // Transparent background
+    setVisible(false);  // Start hidden
+    setAlpha(0.0f);     // Ensure alpha is 0
 }
 
 ADSRVisualizationComponent::~ADSRVisualizationComponent()
@@ -21,8 +23,8 @@ void ADSRVisualizationComponent::setADSR(float attack, float decay, float sustai
     decayMs = decay;
     sustainLevel = sustain;
     releaseMs = release;
-    // Only repaint if we're actually visible (alpha > 0)
-    if (currentAlpha > 0.0f) {
+    // Only repaint if we're actually visible (alpha > 0) AND visible
+    if (currentAlpha > 0.0f && isVisible()) {
         repaint();
     }
 }
@@ -42,7 +44,12 @@ float ADSRVisualizationComponent::amplitudeToY(float amplitude, float height) co
 void ADSRVisualizationComponent::paint(juce::Graphics& g)
 {
     // Don't paint if alpha is 0 or component is not visible
-    if (currentAlpha <= 0.0f || !isVisible()) {
+    // Use a strict check - if alpha is exactly 0 or less, don't paint at all
+    // Check visibility first, then alpha
+    if (!isVisible()) {
+        return;
+    }
+    if (currentAlpha <= 0.0f) {
         return;
     }
     

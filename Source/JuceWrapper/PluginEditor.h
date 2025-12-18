@@ -38,7 +38,7 @@ private:
     ADSRVisualizationComponent adsrVisualization;
     juce::Label adsrLabel;  // "ADSR" text overlay in top right
     juce::Label parameterDisplayLabel;  // Parameter value display (e.g., "A 1s") in top left
-    juce::Label gainDisplayLabel;  // Gain display (e.g., "Gain 1.5x") in top right
+    juce::Label bpmDisplayLabel;  // BPM display (e.g., "BPM: 120") in top right
     
     // Parameter display component (label + progress bar)
     class ParameterDisplay : public juce::Component {
@@ -161,6 +161,7 @@ private:
     float sampleGain;
     int sampleLength; // Store sample length for encoder mapping
     double sampleRate; // Store sample rate for time calculations
+    int projectBPM;  // Project BPM (default 120)
     
     // Parameter display fade-out tracking
     int64_t lastEncoderChangeTime;  // Time when encoder was last moved (milliseconds)
@@ -184,8 +185,8 @@ private:
     // Update waveform visualization with current parameters
     void updateWaveformVisualization();
     
-    // Update gain display in top right corner
-    void updateGainDisplay();
+    // Update BPM display in top right corner
+    void updateBPMDisplay();
     
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(Op1CloneAudioProcessorEditor)
 };

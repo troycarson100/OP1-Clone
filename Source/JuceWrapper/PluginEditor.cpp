@@ -20,10 +20,12 @@ Op1CloneAudioProcessorEditor::Op1CloneAudioProcessorEditor(Op1CloneAudioProcesso
     addAndMakeVisible(&screenComponent);
     
     // Setup ADSR visualization (overlay on screen)
+    // Don't add to component tree until it's needed - this prevents any painting on startup
     adsrVisualization.setAlwaysOnTop(true);
     adsrVisualization.setAlpha(0.0f);  // Start invisible
     adsrVisualization.setVisible(false);  // Start hidden
-    addChildComponent(&adsrVisualization);  // Use addChildComponent so it starts hidden
+    adsrVisualization.setInterceptsMouseClicks(false, false);  // Don't intercept mouse clicks
+    // Don't add to component tree yet - will be added when first shown
     
     // Setup ADSR label (overlay in top right of screen)
     adsrLabel.setText("ADSR", juce::dontSendNotification);
@@ -41,13 +43,14 @@ Op1CloneAudioProcessorEditor::Op1CloneAudioProcessorEditor(Op1CloneAudioProcesso
     parameterDisplayLabel.setVisible(false);  // Hidden by default
     addAndMakeVisible(&parameterDisplayLabel);
     
-    // Setup gain display label (overlay in top right of screen when adjusting encoder 4)
-    gainDisplayLabel.setText("", juce::dontSendNotification);
-    gainDisplayLabel.setJustificationType(juce::Justification::centredRight);
-    gainDisplayLabel.setColour(juce::Label::textColourId, juce::Colours::white);
-    gainDisplayLabel.setAlwaysOnTop(true);
-    gainDisplayLabel.setVisible(false);  // Hidden by default
-    addChildComponent(&gainDisplayLabel);
+    // Setup BPM display label (overlay in top right of screen)
+    projectBPM = 120;  // Default BPM
+    bpmDisplayLabel.setText("BPM: 120", juce::dontSendNotification);
+    bpmDisplayLabel.setJustificationType(juce::Justification::centredRight);
+    bpmDisplayLabel.setColour(juce::Label::textColourId, juce::Colours::white);
+    bpmDisplayLabel.setAlwaysOnTop(true);
+    bpmDisplayLabel.setVisible(true);  // Always visible
+    addAndMakeVisible(&bpmDisplayLabel);
     
     // Initialize fade-out tracking
     lastEncoderChangeTime = 0;
@@ -198,10 +201,16 @@ Op1CloneAudioProcessorEditor::Op1CloneAudioProcessorEditor(Op1CloneAudioProcesso
     paramDisplay8.setValueText("20ms");
     
     // Initialize encoder 5-8 to ADSR defaults
+    // Note: setValue already uses dontSendNotification, so callbacks won't fire
     encoder5.setValue(0.0002f); // Attack default
     encoder6.setValue(0.0f);    // Decay default
     encoder7.setValue(1.0f);    // Sustain default
     encoder8.setValue(0.001f);  // Release default
+    
+    // Explicitly ensure ADSR visualization is hidden after initialization
+    adsrVisualization.setAlpha(0.0f);
+    adsrVisualization.setVisible(false);
+    isADSRDragging = false;
     
     // Setup encoders - ADSR is now on encoders 5-8 (shift off), top 4 do nothing in shift mode
     encoder1.onValueChanged = [this](float value) {
@@ -315,8 +324,6 @@ Op1CloneAudioProcessorEditor::Op1CloneAudioProcessorEditor(Op1CloneAudioProcesso
             sampleGain = value * 2.0f;
             updateSampleEditing();
             updateWaveformVisualization();
-            // Update gain display in top right
-            updateGainDisplay();
             // Update parameter display 4 (Gain) - normalize from 0-2.0 to 0-1
             paramDisplay4.setValue(value);
             // Format value: show as multiplier (e.g., "1.5x")
@@ -353,9 +360,14 @@ Op1CloneAudioProcessorEditor::Op1CloneAudioProcessorEditor(Op1CloneAudioProcesso
             // Show ADSR visualization when value changes (only if not already showing)
             if (!isADSRDragging) {
                 isADSRDragging = true;
-                updateADSR();  // Ensure values are up to date
+                // Add to component tree if not already added
+                if (adsrVisualization.getParentComponent() == nullptr) {
+                    addAndMakeVisible(&adsrVisualization);
+                }
+                // Make visible first, then update
                 adsrVisualization.setAlpha(1.0f);
                 adsrVisualization.setVisible(true);
+                updateADSR();  // Ensure values are up to date
                 repaint();
             }
             // Reset fade-out timer (will be set on drag end)
@@ -365,9 +377,14 @@ Op1CloneAudioProcessorEditor::Op1CloneAudioProcessorEditor(Op1CloneAudioProcesso
     encoder5.onDragStart = [this]() {
         if (!shiftToggleButton.getToggleState()) {
             isADSRDragging = true;
-            updateADSR();  // Update with current values
+            // Add to component tree if not already added
+            if (adsrVisualization.getParentComponent() == nullptr) {
+                addAndMakeVisible(&adsrVisualization);
+            }
+            // Make visible first, then update
             adsrVisualization.setAlpha(1.0f);
             adsrVisualization.setVisible(true);
+            updateADSR();  // Update with current values
             repaint();  // Repaint the entire editor to ensure visualization shows
         }
     };
@@ -406,9 +423,14 @@ Op1CloneAudioProcessorEditor::Op1CloneAudioProcessorEditor(Op1CloneAudioProcesso
             // Show ADSR visualization when value changes (only if not already showing)
             if (!isADSRDragging) {
                 isADSRDragging = true;
-                updateADSR();  // Ensure values are up to date
+                // Add to component tree if not already added
+                if (adsrVisualization.getParentComponent() == nullptr) {
+                    addAndMakeVisible(&adsrVisualization);
+                }
+                // Make visible first, then update
                 adsrVisualization.setAlpha(1.0f);
                 adsrVisualization.setVisible(true);
+                updateADSR();  // Ensure values are up to date
                 repaint();
             }
             // Reset fade-out timer (will be set on drag end)
@@ -418,9 +440,14 @@ Op1CloneAudioProcessorEditor::Op1CloneAudioProcessorEditor(Op1CloneAudioProcesso
     encoder6.onDragStart = [this]() {
         if (!shiftToggleButton.getToggleState()) {
             isADSRDragging = true;
-            updateADSR();  // Update with current values
+            // Add to component tree if not already added
+            if (adsrVisualization.getParentComponent() == nullptr) {
+                addAndMakeVisible(&adsrVisualization);
+            }
+            // Make visible first, then update
             adsrVisualization.setAlpha(1.0f);
             adsrVisualization.setVisible(true);
+            updateADSR();  // Update with current values
             repaint();  // Repaint the entire editor to ensure visualization shows
         }
     };
@@ -456,9 +483,14 @@ Op1CloneAudioProcessorEditor::Op1CloneAudioProcessorEditor(Op1CloneAudioProcesso
             // Show ADSR visualization when value changes (only if not already showing)
             if (!isADSRDragging) {
                 isADSRDragging = true;
-                updateADSR();  // Ensure values are up to date
+                // Add to component tree if not already added
+                if (adsrVisualization.getParentComponent() == nullptr) {
+                    addAndMakeVisible(&adsrVisualization);
+                }
+                // Make visible first, then update
                 adsrVisualization.setAlpha(1.0f);
                 adsrVisualization.setVisible(true);
+                updateADSR();  // Ensure values are up to date
                 repaint();
             }
             // Reset fade-out timer (will be set on drag end)
@@ -468,9 +500,14 @@ Op1CloneAudioProcessorEditor::Op1CloneAudioProcessorEditor(Op1CloneAudioProcesso
     encoder7.onDragStart = [this]() {
         if (!shiftToggleButton.getToggleState()) {
             isADSRDragging = true;
-            updateADSR();  // Update with current values
+            // Add to component tree if not already added
+            if (adsrVisualization.getParentComponent() == nullptr) {
+                addAndMakeVisible(&adsrVisualization);
+            }
+            // Make visible first, then update
             adsrVisualization.setAlpha(1.0f);
             adsrVisualization.setVisible(true);
+            updateADSR();  // Update with current values
             repaint();  // Repaint the entire editor to ensure visualization shows
         }
     };
@@ -509,9 +546,14 @@ Op1CloneAudioProcessorEditor::Op1CloneAudioProcessorEditor(Op1CloneAudioProcesso
             // Show ADSR visualization when value changes (only if not already showing)
             if (!isADSRDragging) {
                 isADSRDragging = true;
-                updateADSR();  // Ensure values are up to date
+                // Add to component tree if not already added
+                if (adsrVisualization.getParentComponent() == nullptr) {
+                    addAndMakeVisible(&adsrVisualization);
+                }
+                // Make visible first, then update
                 adsrVisualization.setAlpha(1.0f);
                 adsrVisualization.setVisible(true);
+                updateADSR();  // Ensure values are up to date
                 repaint();
             }
             // Reset fade-out timer (will be set on drag end)
@@ -521,9 +563,14 @@ Op1CloneAudioProcessorEditor::Op1CloneAudioProcessorEditor(Op1CloneAudioProcesso
     encoder8.onDragStart = [this]() {
         if (!shiftToggleButton.getToggleState()) {
             isADSRDragging = true;
-            updateADSR();  // Update with current values
+            // Add to component tree if not already added
+            if (adsrVisualization.getParentComponent() == nullptr) {
+                addAndMakeVisible(&adsrVisualization);
+            }
+            // Make visible first, then update
             adsrVisualization.setAlpha(1.0f);
             adsrVisualization.setVisible(true);
+            updateADSR();  // Update with current values
             repaint();  // Repaint the entire editor to ensure visualization shows
         }
     };
@@ -660,8 +707,8 @@ void Op1CloneAudioProcessorEditor::resized() {
                                     100,
                                     20);
     
-    // Gain display label (overlay in top right of screen)
-    gainDisplayLabel.setBounds(screenComponentBounds.getX() + screenComponentBounds.getWidth() - 100,
+    // BPM display label (overlay in top right of screen)
+    bpmDisplayLabel.setBounds(screenComponentBounds.getX() + screenComponentBounds.getWidth() - 100,
                                screenComponentBounds.getY() + 5,
                                90,
                                20);
@@ -952,12 +999,7 @@ void Op1CloneAudioProcessorEditor::buttonClicked(juce::Button* button) {
         bool shiftEnabled = shiftToggleButton.getToggleState();
         adsrLabel.setVisible(shiftEnabled);
         
-        // Hide gain display when shift is enabled to avoid overlap with ADSR label
-        if (shiftEnabled) {
-            gainDisplayLabel.setVisible(false);
-        } else {
-            gainDisplayLabel.setVisible(true);
-        }
+        // BPM display is always visible, no need to toggle
         
         // ADSR visualization is now controlled by drag events, not shift button
         // Force repaint to show/hide components
@@ -967,12 +1009,13 @@ void Op1CloneAudioProcessorEditor::buttonClicked(juce::Button* button) {
 
 void Op1CloneAudioProcessorEditor::updateADSR()
 {
-    // Update visualization (only if visible/dragging)
-    if (isADSRDragging || (adsrVisualization.isVisible() && adsrVisualization.getAlpha() > 0.0f)) {
+    // Update visualization (only if explicitly being dragged/interacted with)
+    // Don't update visualization on startup or when hidden
+    if (isADSRDragging) {
         adsrVisualization.setADSR(adsrAttackMs, adsrDecayMs, adsrSustain, adsrReleaseMs);
     }
     
-    // Send to processor
+    // Send to processor (always update the audio processor)
     audioProcessor.setADSR(adsrAttackMs, adsrDecayMs, adsrSustain, adsrReleaseMs);
 }
 
@@ -1031,22 +1074,10 @@ void Op1CloneAudioProcessorEditor::updateWaveformVisualization() {
     screenComponent.repaint();
 }
 
-void Op1CloneAudioProcessorEditor::updateGainDisplay() {
-    // Don't show gain display when shift is enabled (ADSR label is shown instead)
-    if (shiftToggleButton.getToggleState()) {
-        gainDisplayLabel.setVisible(false);
-        return;
-    }
-    
-    // Show gain value in top right corner (e.g., "Gain 1.5x")
-    juce::String gainText = "Gain " + juce::String(sampleGain, 2) + "x";
-    gainDisplayLabel.setText(gainText, juce::dontSendNotification);
-    
-    // Reset fade-out timer
-    lastEncoderChangeTime = juce::Time::currentTimeMillis();
-    parameterDisplayAlpha = 1.0f;
-    gainDisplayLabel.setColour(juce::Label::textColourId, juce::Colours::white);
-    gainDisplayLabel.setVisible(true);
-    gainDisplayLabel.repaint();
+void Op1CloneAudioProcessorEditor::updateBPMDisplay() {
+    // Show BPM value in top right corner (e.g., "BPM: 120")
+    juce::String bpmText = "BPM: " + juce::String(projectBPM);
+    bpmDisplayLabel.setText(bpmText, juce::dontSendNotification);
+    bpmDisplayLabel.repaint();
 }
 
