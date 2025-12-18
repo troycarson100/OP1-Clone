@@ -48,6 +48,10 @@ private:
     EncoderComponent encoder2;
     EncoderComponent encoder3;
     EncoderComponent encoder4;
+    EncoderComponent encoder5;
+    EncoderComponent encoder6;
+    EncoderComponent encoder7;
+    EncoderComponent encoder8;
     
     juce::Slider gainSlider;
     juce::Label volumeLabel;  // "Volume" text under the knob

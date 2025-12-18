@@ -10,7 +10,11 @@ Op1CloneAudioProcessorEditor::Op1CloneAudioProcessorEditor(Op1CloneAudioProcesso
     , encoder1("")
     , encoder2("")
     , encoder3("")
-    , encoder4("") {
+    , encoder4("")
+    , encoder5("")
+    , encoder6("")
+    , encoder7("")
+    , encoder8("") {
     
     // Setup screen component
     addAndMakeVisible(&screenComponent);
@@ -265,6 +269,10 @@ Op1CloneAudioProcessorEditor::Op1CloneAudioProcessorEditor(Op1CloneAudioProcesso
     addAndMakeVisible(&encoder2);
     addAndMakeVisible(&encoder3);
     addAndMakeVisible(&encoder4);
+    addAndMakeVisible(&encoder5);
+    addAndMakeVisible(&encoder6);
+    addAndMakeVisible(&encoder7);
+    addAndMakeVisible(&encoder8);
     
     setSize(1200, 500); // Double width
 }
@@ -276,17 +284,10 @@ Op1CloneAudioProcessorEditor::~Op1CloneAudioProcessorEditor() {
 void Op1CloneAudioProcessorEditor::paint(juce::Graphics& g) {
     // Dark background
     g.fillAll(juce::Colour(0xFF2A2A2A));
-    
-    // Title at top
-    g.setColour(juce::Colours::white);
-    g.setFont(18.0f);
-    g.drawFittedText("OP-1 Clone Sampler", getLocalBounds().removeFromTop(25), 
-                     juce::Justification::centred, 1);
 }
 
 void Op1CloneAudioProcessorEditor::resized() {
     auto bounds = getLocalBounds();
-    bounds.removeFromTop(25); // Title area
     
     // Top left: Master gain knob
     auto topLeftArea = bounds.removeFromLeft(150).removeFromTop(150).reduced(10);
@@ -346,19 +347,27 @@ void Op1CloneAudioProcessorEditor::resized() {
     // Under screen: Load sample button (directly below the screen)
     loadSampleButton.setBounds(screenArea.removeFromTop(40).reduced(10));
     
-        // Right side: Encoders in a horizontal row (moved up and left, closer to screen)
+        // Right side: Encoders in two horizontal rows
         auto encoderArea = bounds.reduced(10);
         int encoderSize = 80; // Much smaller encoders
         int encoderSpacing = 15;
-        int totalEncoderWidth = (encoderSize + encoderSpacing) * 4 - encoderSpacing;
+        int rowSpacing = 20; // Vertical spacing between rows
         // Move left (closer to screen) - start closer to left edge instead of centering
         int startX = encoderArea.getX() + 20; // 20px from left edge instead of centered
-        int centerY = encoderArea.getY() + encoderArea.getHeight() * 0.15; // Move up more (15% from top, was 25%)
         
-        encoder1.setBounds(startX, centerY - encoderSize / 2, encoderSize, encoderSize);
-        encoder2.setBounds(startX + encoderSize + encoderSpacing, centerY - encoderSize / 2, encoderSize, encoderSize);
-        encoder3.setBounds(startX + (encoderSize + encoderSpacing) * 2, centerY - encoderSize / 2, encoderSize, encoderSize);
-        encoder4.setBounds(startX + (encoderSize + encoderSpacing) * 3, centerY - encoderSize / 2, encoderSize, encoderSize);
+        // Top row (encoders 1-4)
+        int topRowY = encoderArea.getY() + encoderArea.getHeight() * 0.15; // Move up more (15% from top, was 25%)
+        encoder1.setBounds(startX, topRowY - encoderSize / 2, encoderSize, encoderSize);
+        encoder2.setBounds(startX + encoderSize + encoderSpacing, topRowY - encoderSize / 2, encoderSize, encoderSize);
+        encoder3.setBounds(startX + (encoderSize + encoderSpacing) * 2, topRowY - encoderSize / 2, encoderSize, encoderSize);
+        encoder4.setBounds(startX + (encoderSize + encoderSpacing) * 3, topRowY - encoderSize / 2, encoderSize, encoderSize);
+        
+        // Bottom row (encoders 5-8)
+        int bottomRowY = topRowY + encoderSize + rowSpacing;
+        encoder5.setBounds(startX, bottomRowY - encoderSize / 2, encoderSize, encoderSize);
+        encoder6.setBounds(startX + encoderSize + encoderSpacing, bottomRowY - encoderSize / 2, encoderSize, encoderSize);
+        encoder7.setBounds(startX + (encoderSize + encoderSpacing) * 2, bottomRowY - encoderSize / 2, encoderSize, encoderSize);
+        encoder8.setBounds(startX + (encoderSize + encoderSpacing) * 3, bottomRowY - encoderSize / 2, encoderSize, encoderSize);
     
     // MIDI status at bottom
     auto statusBounds = getLocalBounds().removeFromBottom(25);
