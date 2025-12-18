@@ -36,6 +36,9 @@ public:
     // Set gain for all voices
     void setGain(float gain);
     
+    // Set ADSR envelope parameters for all voices
+    void setADSR(float attackMs, float decayMs, float sustain, float releaseMs);
+    
     // Get debug info from first active voice (for UI)
     void getDebugInfo(int& actualInN, int& outN, int& primeRemaining, int& nonZeroCount) const;
     

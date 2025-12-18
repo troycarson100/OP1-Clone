@@ -63,6 +63,9 @@ public:
     // Enable or disable time-warp processing (called from UI)
     void setTimeWarpEnabled(bool enabled);
     
+    // Set ADSR envelope parameters (called from UI)
+    void setADSR(float attackMs, float decayMs, float sustain, float releaseMs);
+    
     // Debug info (updated from audio thread, read from UI thread)
     std::atomic<int> debugLastActualInN{0};
     std::atomic<int> debugLastOutN{0};

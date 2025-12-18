@@ -174,6 +174,10 @@ void Op1CloneAudioProcessor::setTimeWarpEnabled(bool enabled) {
     timeWarpEnabled.store(enabled, std::memory_order_relaxed);
 }
 
+void Op1CloneAudioProcessor::setADSR(float attackMs, float decayMs, float sustain, float releaseMs) {
+    adapter.setADSR(attackMs, decayMs, sustain, releaseMs);
+}
+
 bool Op1CloneAudioProcessor::loadSampleFromFile(const juce::File& file) {
     if (!file.existsAsFile()) {
         return false;

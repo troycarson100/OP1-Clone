@@ -76,6 +76,10 @@ void SamplerEngine::setGain(float gain) {
     gainSmoother.setTarget(targetGain, currentBlockSize);
 }
 
+void SamplerEngine::setADSR(float attackMs, float decayMs, float sustain, float releaseMs) {
+    voiceManager.setADSR(attackMs, decayMs, sustain, releaseMs);
+}
+
 void SamplerEngine::getDebugInfo(int& actualInN, int& outN, int& primeRemaining, int& nonZeroCount) const {
     voiceManager.getDebugInfo(actualInN, outN, primeRemaining, nonZeroCount);
 }

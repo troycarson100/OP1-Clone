@@ -15,6 +15,32 @@ Op1CloneAudioProcessorEditor::Op1CloneAudioProcessorEditor(Op1CloneAudioProcesso
     // Setup screen component
     addAndMakeVisible(&screenComponent);
     
+    // Setup ADSR visualization (overlay on screen)
+    adsrVisualization.setAlwaysOnTop(true);
+    adsrVisualization.setVisible(false);  // Hidden by default, shown when shift is enabled
+    addChildComponent(&adsrVisualization);  // Use addChildComponent so it starts hidden
+    
+    // Setup ADSR label (overlay in top right of screen)
+    adsrLabel.setText("ADSR", juce::dontSendNotification);
+    adsrLabel.setJustificationType(juce::Justification::centredRight);
+    adsrLabel.setColour(juce::Label::textColourId, juce::Colours::white);
+    adsrLabel.setAlwaysOnTop(true);
+    adsrLabel.setVisible(false);  // Hidden by default, shown when shift is enabled
+    addChildComponent(&adsrLabel);  // Use addChildComponent so it starts hidden
+    
+    // Setup parameter display label (overlay in top left of screen)
+    parameterDisplayLabel.setText("", juce::dontSendNotification);
+    parameterDisplayLabel.setJustificationType(juce::Justification::centredLeft);
+    parameterDisplayLabel.setColour(juce::Label::textColourId, juce::Colours::white);
+    parameterDisplayLabel.setAlwaysOnTop(true);
+    parameterDisplayLabel.setVisible(false);  // Hidden by default
+    addAndMakeVisible(&parameterDisplayLabel);
+    
+    // Initialize fade-out tracking
+    lastEncoderChangeTime = 0;
+    parameterDisplayAlpha = 0.0f;
+    currentParameterText = "";
+    
     // Setup MIDI status component
     addAndMakeVisible(&midiStatusComponent);
     midiStatusComponent.setMidiHandler(&audioProcessor.getMidiInputHandler());
@@ -85,41 +111,63 @@ Op1CloneAudioProcessorEditor::Op1CloneAudioProcessorEditor(Op1CloneAudioProcesso
     // Update waveform with default sample
     updateWaveform();
     
-    // Setup encoders (no labels)
+    // ADSR parameters (in milliseconds, except sustain which is 0.0-1.0)
+    adsrAttackMs = 2.0f;
+    adsrDecayMs = 0.0f;
+    adsrSustain = 1.0f;
+    adsrReleaseMs = 20.0f;
+    
+    // Setup encoders - control ADSR when shift is enabled
     encoder1.onValueChanged = [this](float value) {
-        // Encoder 1 value changed
-        DBG("Encoder 1: " << value);
+        if (shiftToggleButton.getToggleState()) {
+            // Encoder 1: Attack (0-10000ms = 0-10 seconds)
+            adsrAttackMs = value * 10000.0f;
+            updateADSR();
+            // Update parameter display
+            updateParameterDisplay("A", adsrAttackMs);
+        }
     };
     encoder1.onButtonPressed = [this]() {
         // Encoder 1 button pressed
-        DBG("Encoder 1 button pressed");
     };
     
     encoder2.onValueChanged = [this](float value) {
-        // Encoder 2 value changed
-        DBG("Encoder 2: " << value);
+        if (shiftToggleButton.getToggleState()) {
+            // Encoder 2: Decay (0-20000ms = 0-20 seconds)
+            adsrDecayMs = value * 20000.0f;
+            updateADSR();
+            // Update parameter display
+            updateParameterDisplay("D", adsrDecayMs);
+        }
     };
     encoder2.onButtonPressed = [this]() {
         // Encoder 2 button pressed
-        DBG("Encoder 2 button pressed");
     };
     
     encoder3.onValueChanged = [this](float value) {
-        // Encoder 3 value changed
-        DBG("Encoder 3: " << value);
+        if (shiftToggleButton.getToggleState()) {
+            // Encoder 3: Sustain (0.0-1.0)
+            adsrSustain = value;
+            updateADSR();
+            // Update parameter display (show as percentage)
+            updateParameterDisplay("S", adsrSustain * 100.0f);  // Convert to percentage
+        }
     };
     encoder3.onButtonPressed = [this]() {
         // Encoder 3 button pressed
-        DBG("Encoder 3 button pressed");
     };
     
     encoder4.onValueChanged = [this](float value) {
-        // Encoder 4 value changed
-        DBG("Encoder 4: " << value);
+        if (shiftToggleButton.getToggleState()) {
+            // Encoder 4: Release (0-20000ms = 0-20 seconds)
+            adsrReleaseMs = value * 20000.0f;
+            updateADSR();
+            // Update parameter display
+            updateParameterDisplay("R", adsrReleaseMs);
+        }
     };
     encoder4.onButtonPressed = [this]() {
         // Encoder 4 button pressed
-        DBG("Encoder 4 button pressed");
     };
     
     // Make encoders visible
@@ -178,6 +226,26 @@ void Op1CloneAudioProcessorEditor::resized() {
                               screenComponentBounds.getBottom() - 25, 
                               screenComponentBounds.getWidth() - 20, 
                               20);
+    
+    // ADSR visualization overlay (60% of screen height, centered)
+    int adsrHeight = static_cast<int>(screenComponentBounds.getHeight() * 0.6f);
+    int adsrY = screenComponentBounds.getY() + (screenComponentBounds.getHeight() - adsrHeight) / 2;
+    adsrVisualization.setBounds(screenComponentBounds.getX(),
+                                adsrY,
+                                screenComponentBounds.getWidth(),
+                                adsrHeight);
+    
+    // ADSR label (overlay in top right of screen)
+    adsrLabel.setBounds(screenComponentBounds.getX() + screenComponentBounds.getWidth() - 60,
+                        screenComponentBounds.getY() + 5,
+                        50,
+                        20);
+    
+    // Parameter display label (overlay in top left of screen)
+    parameterDisplayLabel.setBounds(screenComponentBounds.getX() + 10,
+                                    screenComponentBounds.getY() + 5,
+                                    100,
+                                    20);
     
     // Under screen: Load sample button (directly below the screen)
     loadSampleButton.setBounds(screenArea.removeFromTop(40).reduced(10));
@@ -314,7 +382,26 @@ void Op1CloneAudioProcessorEditor::sendMidiNote(int note, float velocity, bool n
 }
 
 void Op1CloneAudioProcessorEditor::timerCallback() {
-    // Timer callback - no longer updating labels
+    // Handle parameter display fade-out
+    if (parameterDisplayAlpha > 0.0f) {
+        int64_t currentTime = juce::Time::currentTimeMillis();
+        int64_t timeSinceLastChange = currentTime - lastEncoderChangeTime;
+        
+        // If 1 second (1000ms) has passed since last encoder change, start fading out
+        if (timeSinceLastChange > 1000) {
+            // Fade out over 1 second (100ms timer = 10 steps)
+            parameterDisplayAlpha -= 0.1f;
+            if (parameterDisplayAlpha < 0.0f) {
+                parameterDisplayAlpha = 0.0f;
+                parameterDisplayLabel.setVisible(false);
+            } else {
+                // Update label color with alpha
+                parameterDisplayLabel.setColour(juce::Label::textColourId, 
+                    juce::Colours::white.withAlpha(parameterDisplayAlpha));
+                parameterDisplayLabel.repaint();
+            }
+        }
+    }
 }
 
 void Op1CloneAudioProcessorEditor::updateWaveform() {
@@ -329,8 +416,57 @@ void Op1CloneAudioProcessorEditor::buttonClicked(juce::Button* button) {
         bool enabled = warpToggleButton.getToggleState();
         audioProcessor.setTimeWarpEnabled(enabled);
     } else if (button == &shiftToggleButton) {
-        // Shift button toggled - visual state is handled by button colours
-        // No action needed yet, just visual feedback
+        // Shift button toggled - show/hide ADSR controls
+        bool shiftEnabled = shiftToggleButton.getToggleState();
+        adsrVisualization.setVisible(shiftEnabled);
+        adsrLabel.setVisible(shiftEnabled);
+        
+        if (shiftEnabled) {
+            // Update ADSR visualization with current values
+            updateADSR();
+        }
+        
+        // Force repaint to show/hide components
+        repaint();
     }
+}
+
+void Op1CloneAudioProcessorEditor::updateADSR()
+{
+    // Update visualization
+    adsrVisualization.setADSR(adsrAttackMs, adsrDecayMs, adsrSustain, adsrReleaseMs);
+    
+    // Send to processor
+    audioProcessor.setADSR(adsrAttackMs, adsrDecayMs, adsrSustain, adsrReleaseMs);
+}
+
+void Op1CloneAudioProcessorEditor::updateParameterDisplay(const juce::String& paramName, float value) {
+    // Format the value appropriately
+    juce::String valueText;
+    if (paramName == "S") {
+        // Sustain is a percentage
+        valueText = juce::String(value, 0) + "%";
+    } else {
+        // Attack, Decay, Release are in milliseconds
+        if (value >= 1000.0f) {
+            // Show as seconds if >= 1 second
+            float seconds = value / 1000.0f;
+            valueText = juce::String(seconds, 1) + "s";
+        } else {
+            // Show as milliseconds
+            valueText = juce::String(static_cast<int>(value)) + "ms";
+        }
+    }
+    
+    // Update text
+    currentParameterText = paramName + " " + valueText;
+    parameterDisplayLabel.setText(currentParameterText, juce::dontSendNotification);
+    
+    // Reset fade-out timer
+    lastEncoderChangeTime = juce::Time::currentTimeMillis();
+    parameterDisplayAlpha = 1.0f;
+    parameterDisplayLabel.setColour(juce::Label::textColourId, juce::Colours::white);
+    parameterDisplayLabel.setVisible(true);
+    parameterDisplayLabel.repaint();
 }
 

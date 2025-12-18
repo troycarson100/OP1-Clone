@@ -36,6 +36,9 @@ public:
     // Set gain parameter (0.0 to 1.0)
     void setGain(float gain);
     
+    // Set ADSR envelope parameters (in milliseconds, except sustain which is 0.0-1.0)
+    void setADSR(float attackMs, float decayMs, float sustain, float releaseMs);
+    
     // Get debug info (for UI display)
     void getDebugInfo(int& actualInN, int& outN, int& primeRemaining, int& nonZeroCount) const;
     

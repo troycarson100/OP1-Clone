@@ -25,6 +25,9 @@ public:
     // Set gain parameter
     void setGain(float gain);
     
+    // Set ADSR envelope parameters
+    void setADSR(float attackMs, float decayMs, float sustain, float releaseMs);
+    
     // Enable or disable time-warp processing
     void setTimeWarpEnabled(bool enabled);
     

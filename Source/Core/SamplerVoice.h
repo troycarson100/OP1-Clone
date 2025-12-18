@@ -43,6 +43,18 @@ public:
     // Enable or disable time-warp processing
     void setWarpEnabled(bool enabled) { warpEnabled = enabled; }
     
+    // ADSR envelope parameters (in milliseconds, except sustain which is 0.0-1.0)
+    void setAttackTime(float attackMs) { attackTimeMs = attackMs; }
+    void setDecayTime(float decayMs) { decayTimeMs = decayMs; }
+    void setSustainLevel(float sustain) { sustainLevel = sustain; } // 0.0 to 1.0
+    void setReleaseTime(float releaseMs) { releaseTimeMs = releaseMs; }
+    
+    // Get ADSR parameters (for UI display)
+    float getAttackTime() const { return attackTimeMs; }
+    float getDecayTime() const { return decayTimeMs; }
+    float getSustainLevel() const { return sustainLevel; }
+    float getReleaseTime() const { return releaseTimeMs; }
+    
     // Get debug info (for UI display)
     void getDebugInfo(int& actualInN, int& outN, int& primeRemaining, int& nonZeroCount) const;
     
@@ -58,10 +70,18 @@ private:
     float currentVelocity;
     float gain;
     
-    // Envelope to prevent clicks (attack and release)
+    // ADSR envelope parameters
+    float attackTimeMs;     // Attack time in milliseconds (default 2.0)
+    float decayTimeMs;      // Decay time in milliseconds (default 0.0)
+    float sustainLevel;     // Sustain level (0.0 to 1.0, default 1.0)
+    float releaseTimeMs;    // Release time in milliseconds (default 20.0)
+    
+    // Envelope state
     float envelopeValue;    // Current envelope value (0.0 to 1.0)
     int attackSamples;      // Number of samples for attack phase
     int attackCounter;      // Current position in attack phase
+    int decaySamples;       // Number of samples for decay phase
+    int decayCounter;       // Current position in decay phase
     int releaseSamples;     // Number of samples for release phase
     int releaseCounter;     // Current position in release phase
     bool inRelease;         // True when in release phase

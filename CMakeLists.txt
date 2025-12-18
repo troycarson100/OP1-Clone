@@ -57,6 +57,8 @@ target_sources(Op1Clone PRIVATE
     Source/JuceWrapper/WaveformComponent.h
     Source/JuceWrapper/EncoderComponent.cpp
     Source/JuceWrapper/EncoderComponent.h
+    Source/JuceWrapper/ADSRVisualizationComponent.cpp
+    Source/JuceWrapper/ADSRVisualizationComponent.h
     Source/JuceWrapper/MidiInputHandler.cpp
     Source/JuceWrapper/MidiInputHandler.h
     Source/JuceWrapper/MidiStatusComponent.cpp

@@ -18,9 +18,15 @@ SamplerVoice::SamplerVoice()
     , rootMidiNote(60)
     , currentVelocity(1.0f)
     , gain(1.0f)
+    , attackTimeMs(2.0f)
+    , decayTimeMs(0.0f)
+    , sustainLevel(1.0f)
+    , releaseTimeMs(20.0f)
     , envelopeValue(0.0f)
     , attackSamples(0)
     , attackCounter(0)
+    , decaySamples(0)
+    , decayCounter(0)
     , releaseSamples(0)
     , releaseCounter(0)
     , inRelease(false)
@@ -105,17 +111,20 @@ void SamplerVoice::noteOn(int note, float velocity) {
         // If wasActive, just update pitch - no reset, no re-priming
     }
     
-    // Reset attack envelope (ramp from 0 to 1 over ~2ms to prevent clicks)
+    // Reset ADSR envelope
     envelopeValue = 0.0f;
     attackCounter = 0;
+    decayCounter = 0;
     inRelease = false;
     releaseCounter = 0;
-    const double attackTimeMs = 2.0; // 2 milliseconds attack
+    
+    // Calculate sample counts from ADSR parameters
     attackSamples = static_cast<int>(currentSampleRate * attackTimeMs / 1000.0);
     if (attackSamples < 1) attackSamples = 1;
     
-    // Calculate release time (20ms for smooth fade-out, longer to prevent clicks)
-    const double releaseTimeMs = 20.0; // 20 milliseconds release
+    decaySamples = static_cast<int>(currentSampleRate * decayTimeMs / 1000.0);
+    if (decaySamples < 1) decaySamples = 1;
+    
     releaseSamples = static_cast<int>(currentSampleRate * releaseTimeMs / 1000.0);
     if (releaseSamples < 1) releaseSamples = 1;
 }
@@ -295,11 +304,19 @@ void SamplerVoice::process(float** output, int numChannels, int numSamples, doub
                     break;
                 }
             } else {
+                // ADSR envelope phases
                 if (attackCounter < attackSamples) {
+                    // Attack phase: 0 to 1.0
                     envelopeValue = static_cast<float>(attackCounter) / static_cast<float>(attackSamples);
                     attackCounter++;
+                } else if (decayCounter < decaySamples) {
+                    // Decay phase: 1.0 to sustain level
+                    float decayProgress = static_cast<float>(decayCounter) / static_cast<float>(decaySamples);
+                    envelopeValue = 1.0f - (1.0f - sustainLevel) * decayProgress;
+                    decayCounter++;
                 } else {
-                    envelopeValue = 1.0f;
+                    // Sustain phase: hold at sustain level
+                    envelopeValue = sustainLevel;
                 }
             }
             
@@ -361,11 +378,19 @@ void SamplerVoice::process(float** output, int numChannels, int numSamples, doub
                     break;
                 }
             } else {
+                // ADSR envelope phases
                 if (attackCounter < attackSamples) {
+                    // Attack phase: 0 to 1.0
                     envelopeValue = static_cast<float>(attackCounter) / static_cast<float>(attackSamples);
                     attackCounter++;
+                } else if (decayCounter < decaySamples) {
+                    // Decay phase: 1.0 to sustain level
+                    float decayProgress = static_cast<float>(decayCounter) / static_cast<float>(decaySamples);
+                    envelopeValue = 1.0f - (1.0f - sustainLevel) * decayProgress;
+                    decayCounter++;
                 } else {
-                    envelopeValue = 1.0f;
+                    // Sustain phase: hold at sustain level
+                    envelopeValue = sustainLevel;
                 }
             }
             

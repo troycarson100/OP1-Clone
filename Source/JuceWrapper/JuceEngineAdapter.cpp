@@ -60,6 +60,10 @@ void JuceEngineAdapter::setGain(float gain) {
     engine.setGain(gain);
 }
 
+void JuceEngineAdapter::setADSR(float attackMs, float decayMs, float sustain, float releaseMs) {
+    engine.setADSR(attackMs, decayMs, sustain, releaseMs);
+}
+
 void JuceEngineAdapter::setTimeWarpEnabled(bool enabled) {
     engine.setTimeWarpEnabled(enabled);
 }

@@ -90,6 +90,15 @@ void VoiceManager::setGain(float gain) {
     }
 }
 
+void VoiceManager::setADSR(float attackMs, float decayMs, float sustain, float releaseMs) {
+    for (auto& voice : voices) {
+        voice.setAttackTime(attackMs);
+        voice.setDecayTime(decayMs);
+        voice.setSustainLevel(sustain);
+        voice.setReleaseTime(releaseMs);
+    }
+}
+
 void VoiceManager::getDebugInfo(int& actualInN, int& outN, int& primeRemaining, int& nonZeroCount) const {
     // Get debug info from first active voice
     for (const auto& voice : voices) {

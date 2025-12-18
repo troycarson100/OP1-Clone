@@ -7,6 +7,7 @@
 #include "ScreenComponent.h"
 #include "EncoderComponent.h"
 #include "MidiStatusComponent.h"
+#include "ADSRVisualizationComponent.h"
 #include <array>
 
 // Simple JUCE editor with gain slider
@@ -32,6 +33,11 @@ private:
     Op1CloneAudioProcessor& audioProcessor;
     
     ScreenComponent screenComponent;
+    
+    // ADSR visualization overlay
+    ADSRVisualizationComponent adsrVisualization;
+    juce::Label adsrLabel;  // "ADSR" text overlay in top right
+    juce::Label parameterDisplayLabel;  // Parameter value display (e.g., "A 1s") in top left
     
     // MIDI status display
     MidiStatusComponent midiStatusComponent;
@@ -68,6 +74,23 @@ private:
     
     // Track which keys are currently pressed
     std::array<bool, 128> pressedKeys{};
+    
+    // ADSR parameters (for UI)
+    float adsrAttackMs;
+    float adsrDecayMs;
+    float adsrSustain;
+    float adsrReleaseMs;
+    
+    // Parameter display fade-out tracking
+    int64_t lastEncoderChangeTime;  // Time when encoder was last moved (milliseconds)
+    float parameterDisplayAlpha;  // Current alpha for fade-out (0.0 to 1.0)
+    juce::String currentParameterText;  // Current parameter text to display
+    
+    // Update ADSR visualization and send to processor
+    void updateADSR();
+    
+    // Update parameter display text
+    void updateParameterDisplay(const juce::String& paramName, float valueMs);
     
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(Op1CloneAudioProcessorEditor)
 };

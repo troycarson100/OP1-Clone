@@ -172,40 +172,38 @@ void EncoderComponent::sliderValueChanged(juce::Slider* slider) {
             }
         }
         
-        // Handle boundary resets (when slider hits 0 or 100)
-        if (currentValue >= 100.0f) {
-            // Reset to middle, but preserve the rotation
-            float excess = currentValue - 100.0f;
+        // Convert delta to rotation angle (smooth, continuous)
+        float twoPi = 2.0f * juce::MathConstants<float>::pi;
+        float angleDelta = delta * 0.01f * twoPi; // Map 0-100 range to 0-2π
+        
+        // Accumulate rotation angle smoothly
+        rotationAngle += angleDelta;
+        
+        // Handle boundary resets (when slider hits 0 or 100) - reset slider position but keep rotation
+        if (currentValue >= 99.9f) {
+            // Reset to middle, but rotation continues smoothly
             encoderSlider.setValue(50.0f, juce::dontSendNotification);
             lastSliderValue = 50.0f;
-            // Add the excess as additional rotation
-            rotationAngle += (50.0f + excess) * 0.01f * 2.0f * juce::MathConstants<float>::pi;
-        } else if (currentValue <= 0.0f) {
-            // Reset to middle, but preserve the rotation
-            float excess = 0.0f - currentValue;
+        } else if (currentValue <= 0.1f) {
+            // Reset to middle, but rotation continues smoothly
             encoderSlider.setValue(50.0f, juce::dontSendNotification);
             lastSliderValue = 50.0f;
-            // Subtract the excess as additional rotation
-            rotationAngle -= (50.0f + excess) * 0.01f * 2.0f * juce::MathConstants<float>::pi;
         } else {
-            // Normal rotation - accumulate angle smoothly
-            rotationAngle += delta * 0.01f * 2.0f * juce::MathConstants<float>::pi;
+            // Normal rotation - update last value
             lastSliderValue = currentValue;
         }
         
-        // Keep rotation angle in reasonable range to prevent overflow
-        float twoPi = 2.0f * juce::MathConstants<float>::pi;
-        if (std::abs(rotationAngle) > twoPi * 1000.0f) {
-            // Normalize but preserve the fractional part for smooth display
+        // Normalize rotation angle periodically to prevent overflow (but keep smooth display)
+        // Only normalize if it gets very large, and preserve fractional part
+        if (std::abs(rotationAngle) > twoPi * 100.0f) {
             float fullRotations = std::floor(rotationAngle / twoPi);
             rotationAngle = rotationAngle - (fullRotations * twoPi);
         }
         
-        // Calculate normalized value (0.0 to 1.0) based on rotation
-        float normalizedValue = std::fmod(rotationAngle / twoPi, 1.0f);
-        if (normalizedValue < 0.0f) {
-            normalizedValue += 1.0f;
-        }
+        // Calculate normalized value (0.0 to 1.0) based on accumulated rotation
+        // Use the slider's current position (0-100) mapped to 0-1, not rotation angle
+        // This ensures the callback gets the actual slider position
+        float normalizedValue = currentValue / 100.0f;
         
         // Trigger callback with normalized value
         if (onValueChanged) {
