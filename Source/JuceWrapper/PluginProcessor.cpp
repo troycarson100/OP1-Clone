@@ -178,6 +178,38 @@ void Op1CloneAudioProcessor::setADSR(float attackMs, float decayMs, float sustai
     adapter.setADSR(attackMs, decayMs, sustain, releaseMs);
 }
 
+void Op1CloneAudioProcessor::setRepitch(float semitones) {
+    adapter.setRepitch(semitones);
+}
+
+void Op1CloneAudioProcessor::setStartPoint(int sampleIndex) {
+    adapter.setStartPoint(sampleIndex);
+}
+
+void Op1CloneAudioProcessor::setEndPoint(int sampleIndex) {
+    adapter.setEndPoint(sampleIndex);
+}
+
+void Op1CloneAudioProcessor::setSampleGain(float gain) {
+    adapter.setSampleGain(gain);
+}
+
+float Op1CloneAudioProcessor::getRepitch() const {
+    return adapter.getRepitch();
+}
+
+int Op1CloneAudioProcessor::getStartPoint() const {
+    return adapter.getStartPoint();
+}
+
+int Op1CloneAudioProcessor::getEndPoint() const {
+    return adapter.getEndPoint();
+}
+
+float Op1CloneAudioProcessor::getSampleGain() const {
+    return adapter.getSampleGain();
+}
+
 bool Op1CloneAudioProcessor::loadSampleFromFile(const juce::File& file) {
     if (!file.existsAsFile()) {
         return false;

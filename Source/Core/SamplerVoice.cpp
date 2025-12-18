@@ -41,6 +41,10 @@ SamplerVoice::SamplerVoice()
     , lastOutN(0)
     , lastPrimeRemaining(0)
     , lastNonZeroCount(0)
+    , repitchSemitones(0.0f)
+    , startPoint(0)
+    , endPoint(0)
+    , sampleGain(1.0f)
 {
     // Create SignalsmithTimePitch instance
     timePitchProcessor = std::make_unique<SignalsmithTimePitch>();
@@ -61,6 +65,10 @@ void SamplerVoice::setSample(const float* data, int length, double sourceRate) {
     active = false;
     rootMidiNote = 60; // Default root note is C4
     
+    // Initialize start/end points to full sample
+    startPoint = 0;
+    endPoint = length;
+    
     // TimePitchProcessor will be prepared when we know the output sample rate
     // (done in process() or prepareToPlay equivalent)
 }
@@ -77,17 +85,18 @@ void SamplerVoice::noteOn(int note, float velocity) {
     
     currentNote = note;
     currentVelocity = clamp(velocity, 0.0f, 1.0f);
-    playhead = 0.0;
-    sampleReadPos = 0.0;
+    playhead = static_cast<double>(startPoint); // Start from start point
+    sampleReadPos = static_cast<double>(startPoint); // Start from start point
     
     bool wasActive = active;
     active = (sampleData != nullptr && sampleLength > 0);
     
-    // Calculate pitch in semitones and set it
+    // Calculate pitch in semitones and set it (include repitch offset)
     if (warpEnabled && timePitchProcessor && active) {
         int semitones = currentNote - rootMidiNote;
+        float totalSemitones = static_cast<float>(semitones) + repitchSemitones;
         
-        timePitchProcessor->setPitchSemitones(static_cast<float>(semitones));
+        timePitchProcessor->setPitchSemitones(totalSemitones);
         // For constant duration: use timeRatio = 1.0 (pitch-only)
         // Reading sample at 1x speed + pitch shift = constant duration automatically
         timePitchProcessor->setTimeRatio(1.0f);
@@ -213,28 +222,30 @@ void SamplerVoice::process(float** output, int numChannels, int numSamples, doub
                 // Priming phase: feed zeros
                 inputBuffer[i] = 0.0f;
             } else {
-                // Normal phase: read from sample at 1x speed
-                if (sampleReadPos >= static_cast<double>(sampleLength)) {
+                // Normal phase: read from sample at 1x speed (respecting start/end points)
+                if (sampleReadPos >= static_cast<double>(endPoint)) {
+                    inputBuffer[i] = 0.0f;
+                } else if (sampleReadPos < static_cast<double>(startPoint)) {
                     inputBuffer[i] = 0.0f;
                 } else {
                     int idx0 = static_cast<int>(sampleReadPos);
                     int idx1 = idx0 + 1;
-                    if (idx0 < 0) idx0 = 0;
-                    if (idx0 >= sampleLength) idx0 = sampleLength - 1;
-                    if (idx1 < 0) idx1 = 0;
-                    if (idx1 >= sampleLength) idx1 = sampleLength - 1;
+                    if (idx0 < startPoint) idx0 = startPoint;
+                    if (idx0 >= endPoint) idx0 = endPoint - 1;
+                    if (idx1 < startPoint) idx1 = startPoint;
+                    if (idx1 >= endPoint) idx1 = endPoint - 1;
                     float frac = static_cast<float>(sampleReadPos - static_cast<double>(idx0));
                     frac = std::max(0.0f, std::min(1.0f, frac));
                     float s0 = sampleData[idx0];
                     float s1 = sampleData[idx1];
-                    inputBuffer[i] = s0 * (1.0f - frac) + s1 * frac;
+                    inputBuffer[i] = (s0 * (1.0f - frac) + s1 * frac) * sampleGain; // Apply sample gain
                 }
                 sampleReadPos += speed;
             }
         }
         
-        // If we've hit the end of the sample, start release
-        if (sampleReadPos >= static_cast<double>(sampleLength) && !inRelease) {
+        // If we've hit the end point, start release
+        if (sampleReadPos >= static_cast<double>(endPoint) && !inRelease) {
             inRelease = true;
             releaseCounter = 0;
             releaseStartValue = envelopeValue;
@@ -332,9 +343,9 @@ void SamplerVoice::process(float** output, int numChannels, int numSamples, doub
         }
         
         // Keep voice active even if no output yet (still priming/accumulating)
-        // Only deactivate if we've hit the end of the sample AND finished release
+        // Only deactivate if we've hit the end point AND finished release
         
-        if (sampleReadPos >= static_cast<double>(sampleLength) && inRelease && releaseCounter >= releaseSamples) {
+        if (sampleReadPos >= static_cast<double>(endPoint) && inRelease && releaseCounter >= releaseSamples) {
             // #region agent log
             {
                 std::ofstream log("/Users/troycarson/Documents/JUCE Projects/OP1-Clone/.cursor/debug.log", std::ios::app);
@@ -348,16 +359,17 @@ void SamplerVoice::process(float** output, int numChannels, int numSamples, doub
         
     } else {
         // --- Simple pitch path (no time-warp) ---
-        // Calculate pitch ratio and playback speed
+        // Calculate pitch ratio and playback speed (include repitch offset)
         int semitones = currentNote - rootMidiNote;
-        double pitchRatio = std::pow(2.0, semitones / 12.0);
+        float totalSemitones = static_cast<float>(semitones) + repitchSemitones;
+        double pitchRatio = std::pow(2.0, totalSemitones / 12.0);
         double speed = (sourceSampleRate / sampleRate) * pitchRatio;
         
         for (int i = 0; i < numSamples; ++i) {
             int index0 = static_cast<int>(playhead);
             
-            if (index0 >= sampleLength - 1) {
-                if (!inRelease) {
+            if (index0 >= endPoint - 1 || index0 < startPoint) {
+                if (!inRelease && index0 >= endPoint - 1) {
                     inRelease = true;
                     releaseCounter = 0;
                     releaseStartValue = envelopeValue;
@@ -397,13 +409,14 @@ void SamplerVoice::process(float** output, int numChannels, int numSamples, doub
             float amplitude = baseAmplitude * envelopeValue;
             
             float sample = 0.0f;
-            if (index0 >= 0 && index0 < sampleLength - 1) {
+            if (index0 >= startPoint && index0 < endPoint - 1) {
                 int index1 = index0 + 1;
+                if (index1 >= endPoint) index1 = endPoint - 1;
                 float fraction = static_cast<float>(playhead - static_cast<double>(index0));
                 fraction = std::max(0.0f, std::min(1.0f, fraction));
                 float s0 = sampleData[index0];
                 float s1 = sampleData[index1];
-                sample = s0 * (1.0f - fraction) + s1 * fraction;
+                sample = (s0 * (1.0f - fraction) + s1 * fraction) * sampleGain; // Apply sample gain
             }
             
             float outputSample = sample * amplitude;
@@ -416,7 +429,7 @@ void SamplerVoice::process(float** output, int numChannels, int numSamples, doub
             playhead += speed;
         }
         
-        if (playhead >= static_cast<double>(sampleLength) && inRelease && releaseCounter >= releaseSamples) {
+        if (playhead >= static_cast<double>(endPoint) && inRelease && releaseCounter >= releaseSamples) {
             active = false;
         }
     }

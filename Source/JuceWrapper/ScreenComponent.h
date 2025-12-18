@@ -17,6 +17,11 @@ public:
     // Set sample data for waveform visualization
     void setSampleData(const std::vector<float>& data);
     
+    // Set start/end points and sample gain for visualization
+    void setStartPoint(int sampleIndex);
+    void setEndPoint(int sampleIndex);
+    void setSampleGain(float gain);
+    
 private:
     WaveformComponent waveformComponent;
     

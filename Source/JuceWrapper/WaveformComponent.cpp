@@ -7,6 +7,12 @@ WaveformComponent::WaveformComponent() {
     waveformColor = juce::Colours::white;
     backgroundColor = juce::Colour(0xFF0A0A0A); // Very dark background
     gridColor = juce::Colour(0xFF222222); // Subtle grid
+    markerColor = juce::Colours::yellow; // Yellow markers for start/end points
+    
+    // Initialize sample editing parameters
+    startPoint = 0;
+    endPoint = 0;
+    sampleGain = 1.0f;
     
     setOpaque(true);
 }
@@ -16,6 +22,25 @@ WaveformComponent::~WaveformComponent() {
 
 void WaveformComponent::setSampleData(const std::vector<float>& data) {
     sampleData = data;
+    // Initialize end point to full sample length
+    if (endPoint == 0 && !data.empty()) {
+        endPoint = static_cast<int>(data.size());
+    }
+    repaint();
+}
+
+void WaveformComponent::setStartPoint(int sampleIndex) {
+    startPoint = sampleIndex;
+    repaint();
+}
+
+void WaveformComponent::setEndPoint(int sampleIndex) {
+    endPoint = sampleIndex;
+    repaint();
+}
+
+void WaveformComponent::setSampleGain(float gain) {
+    sampleGain = gain;
     repaint();
 }
 
@@ -57,9 +82,18 @@ void WaveformComponent::drawWaveform(juce::Graphics& g, juce::Rectangle<int> bou
     int height = bounds.getHeight();
     int centerY = bounds.getCentreY();
     
+    // Calculate visible sample range (zoom to start/end points)
+    int visibleStart = std::max(0, startPoint);
+    int visibleEnd = std::min(static_cast<int>(sampleData.size()), endPoint);
+    int visibleLength = visibleEnd - visibleStart;
+    
+    if (visibleLength <= 0) {
+        return; // No visible range
+    }
+    
     // Higher resolution for smoother display (2x for smoother curves)
     int displayPoints = width * 2;
-    int samplesPerPoint = static_cast<int>(std::ceil(static_cast<double>(sampleData.size()) / static_cast<double>(displayPoints)));
+    int samplesPerPoint = static_cast<int>(std::ceil(static_cast<double>(visibleLength) / static_cast<double>(displayPoints)));
     
     if (samplesPerPoint < 1) {
         samplesPerPoint = 1;
@@ -75,10 +109,11 @@ void WaveformComponent::drawWaveform(juce::Graphics& g, juce::Rectangle<int> bou
     float halfHeight = static_cast<float>(height) * 0.5f * 0.5f;
     
     for (int x = 0; x < displayPoints; ++x) {
-        int startSample = x * samplesPerPoint;
-        int endSample = std::min(startSample + samplesPerPoint, static_cast<int>(sampleData.size()));
+        int sampleOffset = x * samplesPerPoint;
+        int startSample = visibleStart + sampleOffset;
+        int endSample = std::min(startSample + samplesPerPoint, visibleEnd);
         
-        if (startSample >= static_cast<int>(sampleData.size())) {
+        if (startSample >= visibleEnd) {
             break;
         }
         
@@ -87,16 +122,21 @@ void WaveformComponent::drawWaveform(juce::Graphics& g, juce::Rectangle<int> bou
         float maxVal = sampleData[startSample];
         
         for (int i = startSample + 1; i < endSample; ++i) {
-            minVal = std::min(minVal, sampleData[i]);
-            maxVal = std::max(maxVal, sampleData[i]);
+            if (i < static_cast<int>(sampleData.size())) {
+                minVal = std::min(minVal, sampleData[i]);
+                maxVal = std::max(maxVal, sampleData[i]);
+            }
         }
         
         // Convert to screen coordinates (scale X to fit bounds width)
         float xPos = static_cast<float>(bounds.getX()) + (static_cast<float>(x) / static_cast<float>(displayPoints)) * static_cast<float>(width);
         
+        // Apply sample gain to visual scaling
+        float scaledHalfHeight = halfHeight * sampleGain;
+        
         // Calculate Y positions (inverted: -1.0 is bottom, 1.0 is top)
-        float topY = centerY - (maxVal * halfHeight);
-        float bottomY = centerY - (minVal * halfHeight);
+        float topY = centerY - (maxVal * scaledHalfHeight);
+        float bottomY = centerY - (minVal * scaledHalfHeight);
         
         // Clamp to bounds
         topY = std::max(static_cast<float>(bounds.getY()), std::min(static_cast<float>(bounds.getBottom()), topY));

@@ -38,6 +38,7 @@ private:
     ADSRVisualizationComponent adsrVisualization;
     juce::Label adsrLabel;  // "ADSR" text overlay in top right
     juce::Label parameterDisplayLabel;  // Parameter value display (e.g., "A 1s") in top left
+    juce::Label gainDisplayLabel;  // Gain display (e.g., "Gain 1.5x") in top right
     
     // MIDI status display
     MidiStatusComponent midiStatusComponent;
@@ -81,6 +82,13 @@ private:
     float adsrSustain;
     float adsrReleaseMs;
     
+    // Sample editing parameters (for UI)
+    float repitchSemitones;
+    int startPoint;
+    int endPoint;
+    float sampleGain;
+    int sampleLength; // Store sample length for encoder mapping
+    
     // Parameter display fade-out tracking
     int64_t lastEncoderChangeTime;  // Time when encoder was last moved (milliseconds)
     float parameterDisplayAlpha;  // Current alpha for fade-out (0.0 to 1.0)
@@ -91,6 +99,15 @@ private:
     
     // Update parameter display text
     void updateParameterDisplay(const juce::String& paramName, float valueMs);
+    
+    // Update sample editing parameters and send to processor
+    void updateSampleEditing();
+    
+    // Update waveform visualization with current parameters
+    void updateWaveformVisualization();
+    
+    // Update gain display in top right corner
+    void updateGainDisplay();
     
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(Op1CloneAudioProcessorEditor)
 };

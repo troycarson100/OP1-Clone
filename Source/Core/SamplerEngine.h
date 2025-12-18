@@ -39,6 +39,18 @@ public:
     // Set ADSR envelope parameters (in milliseconds, except sustain which is 0.0-1.0)
     void setADSR(float attackMs, float decayMs, float sustain, float releaseMs);
     
+    // Set sample editing parameters
+    void setRepitch(float semitones);
+    void setStartPoint(int sampleIndex);
+    void setEndPoint(int sampleIndex);
+    void setSampleGain(float gain);
+    
+    // Get sample editing parameters
+    float getRepitch() const;
+    int getStartPoint() const;
+    int getEndPoint() const;
+    float getSampleGain() const;
+    
     // Get debug info (for UI display)
     void getDebugInfo(int& actualInN, int& outN, int& primeRemaining, int& nonZeroCount) const;
     

@@ -28,6 +28,18 @@ public:
     // Set ADSR envelope parameters
     void setADSR(float attackMs, float decayMs, float sustain, float releaseMs);
     
+    // Set sample editing parameters
+    void setRepitch(float semitones);
+    void setStartPoint(int sampleIndex);
+    void setEndPoint(int sampleIndex);
+    void setSampleGain(float gain);
+    
+    // Get sample editing parameters
+    float getRepitch() const;
+    int getStartPoint() const;
+    int getEndPoint() const;
+    float getSampleGain() const;
+    
     // Enable or disable time-warp processing
     void setTimeWarpEnabled(bool enabled);
     

@@ -99,6 +99,58 @@ void VoiceManager::setADSR(float attackMs, float decayMs, float sustain, float r
     }
 }
 
+void VoiceManager::setRepitch(float semitones) {
+    for (auto& voice : voices) {
+        voice.setRepitch(semitones);
+    }
+}
+
+void VoiceManager::setStartPoint(int sampleIndex) {
+    for (auto& voice : voices) {
+        voice.setStartPoint(sampleIndex);
+    }
+}
+
+void VoiceManager::setEndPoint(int sampleIndex) {
+    for (auto& voice : voices) {
+        voice.setEndPoint(sampleIndex);
+    }
+}
+
+void VoiceManager::setSampleGain(float gain) {
+    for (auto& voice : voices) {
+        voice.setSampleGain(gain);
+    }
+}
+
+float VoiceManager::getRepitch() const {
+    if (MAX_VOICES > 0) {
+        return voices[0].getRepitch();
+    }
+    return 0.0f;
+}
+
+int VoiceManager::getStartPoint() const {
+    if (MAX_VOICES > 0) {
+        return voices[0].getStartPoint();
+    }
+    return 0;
+}
+
+int VoiceManager::getEndPoint() const {
+    if (MAX_VOICES > 0) {
+        return voices[0].getEndPoint();
+    }
+    return 0;
+}
+
+float VoiceManager::getSampleGain() const {
+    if (MAX_VOICES > 0) {
+        return voices[0].getSampleGain();
+    }
+    return 1.0f;
+}
+
 void VoiceManager::getDebugInfo(int& actualInN, int& outN, int& primeRemaining, int& nonZeroCount) const {
     // Get debug info from first active voice
     for (const auto& voice : voices) {

@@ -66,6 +66,18 @@ public:
     // Set ADSR envelope parameters (called from UI)
     void setADSR(float attackMs, float decayMs, float sustain, float releaseMs);
     
+    // Set sample editing parameters (called from UI)
+    void setRepitch(float semitones);
+    void setStartPoint(int sampleIndex);
+    void setEndPoint(int sampleIndex);
+    void setSampleGain(float gain);
+    
+    // Get sample editing parameters (for UI display)
+    float getRepitch() const;
+    int getStartPoint() const;
+    int getEndPoint() const;
+    float getSampleGain() const;
+    
     // Debug info (updated from audio thread, read from UI thread)
     std::atomic<int> debugLastActualInN{0};
     std::atomic<int> debugLastOutN{0};

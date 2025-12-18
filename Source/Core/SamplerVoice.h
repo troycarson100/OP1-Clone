@@ -58,6 +58,18 @@ public:
     // Get debug info (for UI display)
     void getDebugInfo(int& actualInN, int& outN, int& primeRemaining, int& nonZeroCount) const;
     
+    // Sample editing parameters
+    void setRepitch(float semitones) { repitchSemitones = semitones; } // Pitch offset in semitones (-12 to +12)
+    void setStartPoint(int sampleIndex) { startPoint = sampleIndex; } // Start playback from this sample
+    void setEndPoint(int sampleIndex) { endPoint = sampleIndex; } // End playback at this sample
+    void setSampleGain(float gain) { sampleGain = clamp(gain, 0.0f, 2.0f); } // Sample gain (0.0 to 2.0)
+    
+    // Get sample editing parameters
+    float getRepitch() const { return repitchSemitones; }
+    int getStartPoint() const { return startPoint; }
+    int getEndPoint() const { return endPoint; }
+    float getSampleGain() const { return sampleGain; }
+    
 private:
     const float* sampleData;
     int sampleLength;
@@ -111,6 +123,12 @@ private:
     mutable int lastOutN;
     mutable int lastPrimeRemaining;
     mutable int lastNonZeroCount;
+    
+    // Sample editing parameters
+    float repitchSemitones;  // Pitch offset in semitones (default 0.0)
+    int startPoint;          // Start playback from this sample (default 0)
+    int endPoint;            // End playback at this sample (default sampleLength)
+    float sampleGain;        // Sample gain multiplier (default 1.0)
     
     // Helper: clamp value
     static float clamp(float value, float min, float max);

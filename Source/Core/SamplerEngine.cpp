@@ -80,6 +80,38 @@ void SamplerEngine::setADSR(float attackMs, float decayMs, float sustain, float 
     voiceManager.setADSR(attackMs, decayMs, sustain, releaseMs);
 }
 
+void SamplerEngine::setRepitch(float semitones) {
+    voiceManager.setRepitch(semitones);
+}
+
+void SamplerEngine::setStartPoint(int sampleIndex) {
+    voiceManager.setStartPoint(sampleIndex);
+}
+
+void SamplerEngine::setEndPoint(int sampleIndex) {
+    voiceManager.setEndPoint(sampleIndex);
+}
+
+void SamplerEngine::setSampleGain(float gain) {
+    voiceManager.setSampleGain(gain);
+}
+
+float SamplerEngine::getRepitch() const {
+    return voiceManager.getRepitch();
+}
+
+int SamplerEngine::getStartPoint() const {
+    return voiceManager.getStartPoint();
+}
+
+int SamplerEngine::getEndPoint() const {
+    return voiceManager.getEndPoint();
+}
+
+float SamplerEngine::getSampleGain() const {
+    return voiceManager.getSampleGain();
+}
+
 void SamplerEngine::getDebugInfo(int& actualInN, int& outN, int& primeRemaining, int& nonZeroCount) const {
     voiceManager.getDebugInfo(actualInN, outN, primeRemaining, nonZeroCount);
 }

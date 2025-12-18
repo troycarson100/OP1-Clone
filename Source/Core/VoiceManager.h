@@ -39,6 +39,18 @@ public:
     // Set ADSR envelope parameters for all voices
     void setADSR(float attackMs, float decayMs, float sustain, float releaseMs);
     
+    // Set sample editing parameters for all voices
+    void setRepitch(float semitones);
+    void setStartPoint(int sampleIndex);
+    void setEndPoint(int sampleIndex);
+    void setSampleGain(float gain);
+    
+    // Get sample editing parameters (from first voice)
+    float getRepitch() const;
+    int getStartPoint() const;
+    int getEndPoint() const;
+    float getSampleGain() const;
+    
     // Get debug info from first active voice (for UI)
     void getDebugInfo(int& actualInN, int& outN, int& primeRemaining, int& nonZeroCount) const;
     

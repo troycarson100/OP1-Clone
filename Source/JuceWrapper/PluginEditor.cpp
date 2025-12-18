@@ -36,10 +36,25 @@ Op1CloneAudioProcessorEditor::Op1CloneAudioProcessorEditor(Op1CloneAudioProcesso
     parameterDisplayLabel.setVisible(false);  // Hidden by default
     addAndMakeVisible(&parameterDisplayLabel);
     
+    // Setup gain display label (overlay in top right of screen when adjusting encoder 4)
+    gainDisplayLabel.setText("", juce::dontSendNotification);
+    gainDisplayLabel.setJustificationType(juce::Justification::centredRight);
+    gainDisplayLabel.setColour(juce::Label::textColourId, juce::Colours::white);
+    gainDisplayLabel.setAlwaysOnTop(true);
+    gainDisplayLabel.setVisible(false);  // Hidden by default
+    addChildComponent(&gainDisplayLabel);
+    
     // Initialize fade-out tracking
     lastEncoderChangeTime = 0;
     parameterDisplayAlpha = 0.0f;
     currentParameterText = "";
+    
+    // Initialize sample editing parameters
+    repitchSemitones = 0.0f;
+    startPoint = 0;
+    endPoint = 0;
+    sampleGain = 1.0f;
+    sampleLength = 0;
     
     // Setup MIDI status component
     addAndMakeVisible(&midiStatusComponent);
@@ -125,6 +140,12 @@ Op1CloneAudioProcessorEditor::Op1CloneAudioProcessorEditor(Op1CloneAudioProcesso
             updateADSR();
             // Update parameter display
             updateParameterDisplay("A", adsrAttackMs);
+        } else {
+            // Encoder 1: Repitch (-12 to +12 semitones)
+            repitchSemitones = (value - 0.5f) * 24.0f; // Map 0-1 to -12 to +12
+            updateSampleEditing();
+            // Update parameter display (show in semitones)
+            updateParameterDisplay("Pitch", repitchSemitones);
         }
     };
     encoder1.onButtonPressed = [this]() {
@@ -138,6 +159,19 @@ Op1CloneAudioProcessorEditor::Op1CloneAudioProcessorEditor(Op1CloneAudioProcesso
             updateADSR();
             // Update parameter display
             updateParameterDisplay("D", adsrDecayMs);
+        } else {
+            // Encoder 2: Start point (0 to sampleLength)
+            if (sampleLength > 0) {
+                startPoint = static_cast<int>(value * static_cast<float>(sampleLength));
+                // Ensure start point is before end point
+                if (startPoint >= endPoint) {
+                    startPoint = std::max(0, endPoint - 1);
+                }
+                updateSampleEditing();
+                updateWaveformVisualization();
+                // Force repaint
+                screenComponent.repaint();
+            }
         }
     };
     encoder2.onButtonPressed = [this]() {
@@ -151,6 +185,19 @@ Op1CloneAudioProcessorEditor::Op1CloneAudioProcessorEditor(Op1CloneAudioProcesso
             updateADSR();
             // Update parameter display (show as percentage)
             updateParameterDisplay("S", adsrSustain * 100.0f);  // Convert to percentage
+        } else {
+            // Encoder 3: End point (0 to sampleLength)
+            if (sampleLength > 0) {
+                endPoint = static_cast<int>(value * static_cast<float>(sampleLength));
+                // Ensure end point is after start point
+                if (endPoint <= startPoint) {
+                    endPoint = std::min(sampleLength, startPoint + 1);
+                }
+                updateSampleEditing();
+                updateWaveformVisualization();
+                // Force repaint
+                screenComponent.repaint();
+            }
         }
     };
     encoder3.onButtonPressed = [this]() {
@@ -164,6 +211,13 @@ Op1CloneAudioProcessorEditor::Op1CloneAudioProcessorEditor(Op1CloneAudioProcesso
             updateADSR();
             // Update parameter display
             updateParameterDisplay("R", adsrReleaseMs);
+        } else {
+            // Encoder 4: Sample gain (0.0 to 2.0)
+            sampleGain = value * 2.0f;
+            updateSampleEditing();
+            updateWaveformVisualization();
+            // Update gain display in top right
+            updateGainDisplay();
         }
     };
     encoder4.onButtonPressed = [this]() {
@@ -247,22 +301,28 @@ void Op1CloneAudioProcessorEditor::resized() {
                                     100,
                                     20);
     
+    // Gain display label (overlay in top right of screen)
+    gainDisplayLabel.setBounds(screenComponentBounds.getX() + screenComponentBounds.getWidth() - 100,
+                               screenComponentBounds.getY() + 5,
+                               90,
+                               20);
+    
     // Under screen: Load sample button (directly below the screen)
     loadSampleButton.setBounds(screenArea.removeFromTop(40).reduced(10));
     
-    // Right side: Encoders in a horizontal row (moved up and left, closer to screen)
-    auto encoderArea = bounds.reduced(10);
-    int encoderSize = 80; // Much smaller encoders
-    int encoderSpacing = 15;
-    int totalEncoderWidth = (encoderSize + encoderSpacing) * 4 - encoderSpacing;
-    // Move left (closer to screen) - start closer to left edge instead of centering
-    int startX = encoderArea.getX() + 20; // 20px from left edge instead of centered
-    int centerY = encoderArea.getY() + encoderArea.getHeight() * 0.25; // Move up more (25% from top)
-    
-    encoder1.setBounds(startX, centerY - encoderSize / 2, encoderSize, encoderSize);
-    encoder2.setBounds(startX + encoderSize + encoderSpacing, centerY - encoderSize / 2, encoderSize, encoderSize);
-    encoder3.setBounds(startX + (encoderSize + encoderSpacing) * 2, centerY - encoderSize / 2, encoderSize, encoderSize);
-    encoder4.setBounds(startX + (encoderSize + encoderSpacing) * 3, centerY - encoderSize / 2, encoderSize, encoderSize);
+        // Right side: Encoders in a horizontal row (moved up and left, closer to screen)
+        auto encoderArea = bounds.reduced(10);
+        int encoderSize = 80; // Much smaller encoders
+        int encoderSpacing = 15;
+        int totalEncoderWidth = (encoderSize + encoderSpacing) * 4 - encoderSpacing;
+        // Move left (closer to screen) - start closer to left edge instead of centering
+        int startX = encoderArea.getX() + 20; // 20px from left edge instead of centered
+        int centerY = encoderArea.getY() + encoderArea.getHeight() * 0.15; // Move up more (15% from top, was 25%)
+        
+        encoder1.setBounds(startX, centerY - encoderSize / 2, encoderSize, encoderSize);
+        encoder2.setBounds(startX + encoderSize + encoderSpacing, centerY - encoderSize / 2, encoderSize, encoderSize);
+        encoder3.setBounds(startX + (encoderSize + encoderSpacing) * 2, centerY - encoderSize / 2, encoderSize, encoderSize);
+        encoder4.setBounds(startX + (encoderSize + encoderSpacing) * 3, centerY - encoderSize / 2, encoderSize, encoderSize);
     
     // MIDI status at bottom
     auto statusBounds = getLocalBounds().removeFromBottom(25);
@@ -409,6 +469,22 @@ void Op1CloneAudioProcessorEditor::updateWaveform() {
     std::vector<float> sampleData;
     audioProcessor.getSampleDataForVisualization(sampleData);
     screenComponent.setSampleData(sampleData);
+    
+    // Update sample length for encoder mapping
+    sampleLength = static_cast<int>(sampleData.size());
+    
+    // Initialize start/end points if needed (first time loading or if they're invalid)
+    if (sampleLength > 0) {
+        if (endPoint == 0 || endPoint > sampleLength) {
+            endPoint = sampleLength;
+        }
+        if (startPoint >= endPoint) {
+            startPoint = 0;
+        }
+        // Update the processor with initial values
+        updateSampleEditing();
+        updateWaveformVisualization();
+    }
 }
 
 void Op1CloneAudioProcessorEditor::buttonClicked(juce::Button* button) {
@@ -446,6 +522,14 @@ void Op1CloneAudioProcessorEditor::updateParameterDisplay(const juce::String& pa
     if (paramName == "S") {
         // Sustain is a percentage
         valueText = juce::String(value, 0) + "%";
+    } else if (paramName == "Pitch") {
+        // Pitch is in semitones (show with +/- sign, rounded to nearest semitone)
+        int semitones = static_cast<int>(std::round(value));
+        if (semitones >= 0) {
+            valueText = "+" + juce::String(semitones) + "st";
+        } else {
+            valueText = juce::String(semitones) + "st";
+        }
     } else {
         // Attack, Decay, Release are in milliseconds
         if (value >= 1000.0f) {
@@ -468,5 +552,35 @@ void Op1CloneAudioProcessorEditor::updateParameterDisplay(const juce::String& pa
     parameterDisplayLabel.setColour(juce::Label::textColourId, juce::Colours::white);
     parameterDisplayLabel.setVisible(true);
     parameterDisplayLabel.repaint();
+}
+
+void Op1CloneAudioProcessorEditor::updateSampleEditing() {
+    // Send sample editing parameters to processor
+    audioProcessor.setRepitch(repitchSemitones);
+    audioProcessor.setStartPoint(startPoint);
+    audioProcessor.setEndPoint(endPoint);
+    audioProcessor.setSampleGain(sampleGain);
+}
+
+void Op1CloneAudioProcessorEditor::updateWaveformVisualization() {
+    // Update waveform component with current start/end points and gain
+    screenComponent.setStartPoint(startPoint);
+    screenComponent.setEndPoint(endPoint);
+    screenComponent.setSampleGain(sampleGain);
+    // Force repaint to show the zoomed waveform
+    screenComponent.repaint();
+}
+
+void Op1CloneAudioProcessorEditor::updateGainDisplay() {
+    // Show gain value in top right corner (e.g., "Gain 1.5x")
+    juce::String gainText = "Gain " + juce::String(sampleGain, 2) + "x";
+    gainDisplayLabel.setText(gainText, juce::dontSendNotification);
+    
+    // Reset fade-out timer
+    lastEncoderChangeTime = juce::Time::currentTimeMillis();
+    parameterDisplayAlpha = 1.0f;
+    gainDisplayLabel.setColour(juce::Label::textColourId, juce::Colours::white);
+    gainDisplayLabel.setVisible(true);
+    gainDisplayLabel.repaint();
 }
 

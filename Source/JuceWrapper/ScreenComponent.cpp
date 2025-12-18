@@ -33,3 +33,15 @@ void ScreenComponent::setSampleData(const std::vector<float>& data) {
     waveformComponent.setSampleData(data);
 }
 
+void ScreenComponent::setStartPoint(int sampleIndex) {
+    waveformComponent.setStartPoint(sampleIndex);
+}
+
+void ScreenComponent::setEndPoint(int sampleIndex) {
+    waveformComponent.setEndPoint(sampleIndex);
+}
+
+void ScreenComponent::setSampleGain(float gain) {
+    waveformComponent.setSampleGain(gain);
+}
+

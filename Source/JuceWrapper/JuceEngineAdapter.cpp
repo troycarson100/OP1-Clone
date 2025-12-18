@@ -64,6 +64,38 @@ void JuceEngineAdapter::setADSR(float attackMs, float decayMs, float sustain, fl
     engine.setADSR(attackMs, decayMs, sustain, releaseMs);
 }
 
+void JuceEngineAdapter::setRepitch(float semitones) {
+    engine.setRepitch(semitones);
+}
+
+void JuceEngineAdapter::setStartPoint(int sampleIndex) {
+    engine.setStartPoint(sampleIndex);
+}
+
+void JuceEngineAdapter::setEndPoint(int sampleIndex) {
+    engine.setEndPoint(sampleIndex);
+}
+
+void JuceEngineAdapter::setSampleGain(float gain) {
+    engine.setSampleGain(gain);
+}
+
+float JuceEngineAdapter::getRepitch() const {
+    return engine.getRepitch();
+}
+
+int JuceEngineAdapter::getStartPoint() const {
+    return engine.getStartPoint();
+}
+
+int JuceEngineAdapter::getEndPoint() const {
+    return engine.getEndPoint();
+}
+
+float JuceEngineAdapter::getSampleGain() const {
+    return engine.getSampleGain();
+}
+
 void JuceEngineAdapter::setTimeWarpEnabled(bool enabled) {
     engine.setTimeWarpEnabled(enabled);
 }
