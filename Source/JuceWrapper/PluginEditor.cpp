@@ -2,12 +2,21 @@
 #include "PluginEditor.h"
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <juce_gui_basics/juce_gui_basics.h>
+#include <juce_core/juce_core.h>
 
 Op1CloneAudioProcessorEditor::Op1CloneAudioProcessorEditor(Op1CloneAudioProcessor& p)
-    : AudioProcessorEditor(&p), audioProcessor(p) {
+    : AudioProcessorEditor(&p), audioProcessor(p)
+    , encoder1("")
+    , encoder2("")
+    , encoder3("")
+    , encoder4("") {
     
     // Setup screen component
     addAndMakeVisible(&screenComponent);
+    
+    // Setup MIDI status component
+    addAndMakeVisible(&midiStatusComponent);
+    midiStatusComponent.setMidiHandler(&audioProcessor.getMidiInputHandler());
     
     // Setup gain slider
     gainSlider.setSliderStyle(juce::Slider::RotaryVerticalDrag);
@@ -35,11 +44,7 @@ Op1CloneAudioProcessorEditor::Op1CloneAudioProcessorEditor(Op1CloneAudioProcesso
     loadSampleButton.onClick = [this] { loadSampleButtonClicked(); };
     addAndMakeVisible(&loadSampleButton);
     
-    // Setup info label
-    infoLabel.setText("Keyboard: A-K = C4-C5, Z-M = C3-B3 | Or use MIDI controller", juce::dontSendNotification);
-    infoLabel.setJustificationType(juce::Justification::centred);
-    infoLabel.setColour(juce::Label::textColourId, juce::Colours::lightgrey);
-    addAndMakeVisible(&infoLabel);
+    // Info label removed
     
     // Setup sample label
     sampleLabel.setText("Sample: Default (440Hz tone)", juce::dontSendNotification);
@@ -55,7 +60,50 @@ Op1CloneAudioProcessorEditor::Op1CloneAudioProcessorEditor(Op1CloneAudioProcesso
     // Update waveform with default sample
     updateWaveform();
     
-    setSize(600, 500);
+    // Setup encoders (no labels)
+    encoder1.onValueChanged = [this](float value) {
+        // Encoder 1 value changed
+        DBG("Encoder 1: " << value);
+    };
+    encoder1.onButtonPressed = [this]() {
+        // Encoder 1 button pressed
+        DBG("Encoder 1 button pressed");
+    };
+    
+    encoder2.onValueChanged = [this](float value) {
+        // Encoder 2 value changed
+        DBG("Encoder 2: " << value);
+    };
+    encoder2.onButtonPressed = [this]() {
+        // Encoder 2 button pressed
+        DBG("Encoder 2 button pressed");
+    };
+    
+    encoder3.onValueChanged = [this](float value) {
+        // Encoder 3 value changed
+        DBG("Encoder 3: " << value);
+    };
+    encoder3.onButtonPressed = [this]() {
+        // Encoder 3 button pressed
+        DBG("Encoder 3 button pressed");
+    };
+    
+    encoder4.onValueChanged = [this](float value) {
+        // Encoder 4 value changed
+        DBG("Encoder 4: " << value);
+    };
+    encoder4.onButtonPressed = [this]() {
+        // Encoder 4 button pressed
+        DBG("Encoder 4 button pressed");
+    };
+    
+    // Make encoders visible
+    addAndMakeVisible(&encoder1);
+    addAndMakeVisible(&encoder2);
+    addAndMakeVisible(&encoder3);
+    addAndMakeVisible(&encoder4);
+    
+    setSize(1200, 500); // Double width
 }
 
 Op1CloneAudioProcessorEditor::~Op1CloneAudioProcessorEditor() {
@@ -74,31 +122,47 @@ void Op1CloneAudioProcessorEditor::paint(juce::Graphics& g) {
 
 void Op1CloneAudioProcessorEditor::resized() {
     auto bounds = getLocalBounds();
+    bounds.removeFromTop(25); // Title area
     
-    // Screen component takes up most of the space (70% width, 60% height - reduced by 40%)
-    auto screenBounds = bounds.removeFromLeft(bounds.getWidth() * 0.7);
+    // Left side: Controls (sample import, volume, test button)
+    auto leftArea = bounds.removeFromLeft(200).reduced(10);
+    
+    // Sample label at top
+    sampleLabel.setBounds(leftArea.removeFromTop(25).reduced(5));
+    
+    // Load sample button
+    loadSampleButton.setBounds(leftArea.removeFromTop(35).reduced(5));
+    
+    // Gain/Volume encoder
+    auto gainArea = leftArea.removeFromTop(120);
+    gainSlider.setBounds(gainArea.removeFromTop(100).reduced(10));
+    gainLabel.setBounds(gainArea.reduced(5));
+    
+    // Test button
+    testButton.setBounds(leftArea.removeFromTop(35).reduced(5));
+    
+    // Middle: Screen component (40% less wide)
+    auto screenBounds = bounds.removeFromLeft(bounds.getWidth() * 0.65 * 0.6); // 65% * 60% = 39% of remaining (40% reduction)
     screenBounds.setHeight(static_cast<int>(screenBounds.getHeight() * 0.6)); // 40% reduction = 60% of original
     screenComponent.setBounds(screenBounds.reduced(10));
     
-    // Controls on the right side
-    auto controlArea = bounds.reduced(10);
-    controlArea.removeFromTop(30);
+    // Right side: Encoders in a horizontal row (moved up and left, closer to screen)
+    auto encoderArea = bounds.reduced(10);
+    int encoderSize = 80; // Much smaller encoders
+    int encoderSpacing = 15;
+    int totalEncoderWidth = (encoderSize + encoderSpacing) * 4 - encoderSpacing;
+    // Move left (closer to screen) - start closer to left edge instead of centering
+    int startX = encoderArea.getX() + 20; // 20px from left edge instead of centered
+    int centerY = encoderArea.getY() + encoderArea.getHeight() * 0.25; // Move up more (25% from top)
     
-    // Sample label at top
-    sampleLabel.setBounds(controlArea.removeFromTop(25).reduced(5));
+    encoder1.setBounds(startX, centerY - encoderSize / 2, encoderSize, encoderSize);
+    encoder2.setBounds(startX + encoderSize + encoderSpacing, centerY - encoderSize / 2, encoderSize, encoderSize);
+    encoder3.setBounds(startX + (encoderSize + encoderSpacing) * 2, centerY - encoderSize / 2, encoderSize, encoderSize);
+    encoder4.setBounds(startX + (encoderSize + encoderSpacing) * 3, centerY - encoderSize / 2, encoderSize, encoderSize);
     
-    // Center the gain slider
-    auto sliderArea = controlArea.reduced(10);
-    gainSlider.setBounds(sliderArea.removeFromTop(150).reduced(20));
-    gainLabel.setBounds(sliderArea.removeFromTop(20));
-    
-    // Buttons
-    auto buttonArea = sliderArea.removeFromTop(40).reduced(10, 5);
-    loadSampleButton.setBounds(buttonArea.removeFromTop(buttonArea.getHeight() / 2).reduced(5, 2));
-    testButton.setBounds(buttonArea.reduced(5, 2));
-    
-    // Info label
-    infoLabel.setBounds(sliderArea.removeFromTop(40).reduced(10));
+    // MIDI status at bottom
+    auto statusBounds = getLocalBounds().removeFromBottom(25);
+    midiStatusComponent.setBounds(statusBounds);
 }
 
 void Op1CloneAudioProcessorEditor::testButtonClicked() {

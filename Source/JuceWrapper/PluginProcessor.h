@@ -4,6 +4,7 @@
 #include <juce_core/juce_core.h>
 #include <juce_audio_basics/juce_audio_basics.h>
 #include "JuceEngineAdapter.h"
+#include "MidiInputHandler.h"
 #include <vector>
 #include <array>
 #include <atomic>
@@ -55,10 +56,16 @@ public:
     
     // Get sample data for visualization (thread-safe)
     void getSampleDataForVisualization(std::vector<float>& outData) const;
+    
+    // Get MIDI input handler (for device management and UI)
+    MidiInputHandler& getMidiInputHandler() { return midiInputHandler; }
 
 private:
     JuceEngineAdapter adapter;
     juce::AudioProcessorValueTreeState parameters;
+    
+    // MIDI input handler for standalone app (lock-free FIFO)
+    MidiInputHandler midiInputHandler;
     
     // Thread-safe MIDI injection for test button (lock-free)
     juce::AbstractFifo midiFifo;

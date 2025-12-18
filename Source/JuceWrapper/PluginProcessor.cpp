@@ -2,6 +2,7 @@
 #include "PluginEditor.h"
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <juce_audio_utils/juce_audio_utils.h>
+#include <juce_audio_devices/juce_audio_devices.h>
 #include <cmath>
 
 // For now, we'll generate a simple test tone as the default sample
@@ -101,6 +102,9 @@ bool Op1CloneAudioProcessor::isBusesLayoutSupported(const BusesLayout& layouts) 
 
 void Op1CloneAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages) {
     juce::ScopedNoDenormals noDenormals;
+    
+    // Drain MIDI input FIFO (from MIDI controller) - lock-free
+    midiInputHandler.drainToMidiBuffer(midiMessages, buffer.getNumSamples());
     
     // Inject any pending MIDI messages from test button (lock-free)
     int count = pendingMidiCount.load(std::memory_order_acquire);

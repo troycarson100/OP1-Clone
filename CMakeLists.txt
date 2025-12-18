@@ -23,6 +23,11 @@ juce_add_plugin(Op1Clone
     PLUGIN_CODE_JucePlugin_IsSynth 1
 )
 
+# Enable custom standalone app to auto-enable MIDI devices
+target_compile_definitions(Op1Clone PRIVATE
+    JUCE_USE_CUSTOM_PLUGIN_STANDALONE_APP=1
+)
+
 # Core source files (portable C++)
 target_sources(Op1Clone PRIVATE
     Source/Core/SamplerVoice.cpp
@@ -42,6 +47,17 @@ target_sources(Op1Clone PRIVATE
     Source/JuceWrapper/ScreenComponent.h
     Source/JuceWrapper/WaveformComponent.cpp
     Source/JuceWrapper/WaveformComponent.h
+    Source/JuceWrapper/EncoderComponent.cpp
+    Source/JuceWrapper/EncoderComponent.h
+    Source/JuceWrapper/MidiInputHandler.cpp
+    Source/JuceWrapper/MidiInputHandler.h
+    Source/JuceWrapper/MidiStatusComponent.cpp
+    Source/JuceWrapper/MidiStatusComponent.h
+)
+
+# Custom standalone main file (only for standalone target)
+target_sources(Op1Clone PRIVATE
+    Source/JuceWrapper/StandaloneMain.cpp
 )
 
 # Include directories

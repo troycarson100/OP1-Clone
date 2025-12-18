@@ -5,6 +5,8 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "PluginProcessor.h"
 #include "ScreenComponent.h"
+#include "EncoderComponent.h"
+#include "MidiStatusComponent.h"
 #include <array>
 
 // Simple JUCE editor with gain slider
@@ -24,6 +26,15 @@ private:
     Op1CloneAudioProcessor& audioProcessor;
     
     ScreenComponent screenComponent;
+    
+    // MIDI status display
+    MidiStatusComponent midiStatusComponent;
+    
+    // Hardware-style encoders
+    EncoderComponent encoder1;
+    EncoderComponent encoder2;
+    EncoderComponent encoder3;
+    EncoderComponent encoder4;
     
     juce::Slider gainSlider;
     juce::Label gainLabel;
