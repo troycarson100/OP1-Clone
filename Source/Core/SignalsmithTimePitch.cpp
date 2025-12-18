@@ -54,9 +54,10 @@ void SignalsmithTimePitch::prepare(const TimePitchConfig& config)
 {
     currentConfig = config;
     
-    // Configure Signalsmith Stretch using presetDefault
-    // This sets up high-quality defaults with splitComputation enabled
-    impl->stretch.presetDefault(config.channels, config.sampleRate, true);
+    // Configure Signalsmith Stretch using presetCheaper for lower CPU usage
+    // presetCheaper still provides high quality but uses less CPU, better for polyphony
+    // splitComputation=true spreads CPU load across blocks to prevent spikes
+    impl->stretch.presetCheaper(config.channels, config.sampleRate, true);
     
     // Get latency values and block sizes
     inputLatency = impl->stretch.inputLatency();
@@ -148,17 +149,17 @@ int SignalsmithTimePitch::process(const float* in, int inN, float* out, int outN
     
     // Process accumulated input through stretcher until we have enough output
     // This handles small host blocks (96 samples) by accumulating
-    // Be aggressive: process smaller chunks to reduce latency
-    const int maxIterations = 20; // Safety limit to avoid CPU spikes
+    // For polyphony: limit iterations to prevent CPU spikes when multiple voices process
+    const int maxIterations = 3; // Reduced from 20 to prevent CPU spikes with chords
     int iterations = 0;
     
     while (outputRing.size() < outN && iterations < maxIterations) {
-        // Process if we have any input available (don't wait for large chunks)
-        // This reduces latency and ensures output starts quickly
-        if (inputRing.size() > 0) {
+        // Process if we have enough input available (wait for reasonable chunks)
+        // This prevents CPU spikes when multiple voices are active
+        if (inputRing.size() >= 64) { // Wait for at least 64 samples to reduce processing frequency
             processAccumulatedInput();
         } else {
-            // No input available - break (will accumulate more on next call)
+            // Not enough input - break (will accumulate more on next call)
             break;
         }
         iterations++;
@@ -291,14 +292,10 @@ void SignalsmithTimePitch::processAccumulatedInput()
     int intervalSamples = impl->stretch.intervalSamples();
     int blockSamples = impl->stretch.blockSamples();
     
-    // CRITICAL FIX: The stretcher processes output sample-by-sample and accumulates input internally.
-    // It doesn't need a full interval before processing - it will produce output when ready.
-    // However, we should provide enough input for time-mapping. The stretcher's process() method
-    // calculates inputOffset = round(outputIndex * inputSamples / outputSamples), so with 1:1 ratio
-    // it needs input up to the output index. We should provide at least as much input as output.
-    // But we can start with smaller chunks and let it accumulate - the stretcher handles this.
-    const int minChunkSize = 32; // Small minimum - stretcher will accumulate internally
-    const int preferredChunkSize = std::max(96, intervalSamples); // Prefer at least one interval when available
+    // For polyphony: process larger chunks less frequently to reduce CPU load
+    // The stretcher accumulates input internally, so we can process in larger batches
+    const int minChunkSize = 64; // Increased from 32 to reduce processing frequency
+    const int preferredChunkSize = std::max(128, intervalSamples / 2); // Process in larger chunks, but not full interval
     int inputAvailable = inputRing.size();
     
     // #region agent log
