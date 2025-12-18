@@ -63,6 +63,16 @@ target_sources(Op1Clone PRIVATE
     Source/JuceWrapper/MidiInputHandler.h
     Source/JuceWrapper/MidiStatusComponent.cpp
     Source/JuceWrapper/MidiStatusComponent.h
+    Source/JuceWrapper/EncoderSetupManager.cpp
+    Source/JuceWrapper/EncoderSetupManager.h
+    Source/JuceWrapper/EditorLayoutManager.cpp
+    Source/JuceWrapper/EditorLayoutManager.h
+    Source/JuceWrapper/EditorEventHandlers.cpp
+    Source/JuceWrapper/EditorEventHandlers.h
+    Source/JuceWrapper/EditorUpdateMethods.cpp
+    Source/JuceWrapper/EditorUpdateMethods.h
+    Source/JuceWrapper/EditorTimerCallback.cpp
+    Source/JuceWrapper/EditorTimerCallback.h
 )
 
 # Custom standalone main file (only for standalone target)

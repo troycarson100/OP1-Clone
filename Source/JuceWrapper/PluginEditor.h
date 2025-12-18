@@ -136,7 +136,7 @@ private:
     
     void loadSampleButtonClicked();
     
-    // Keyboard to MIDI mapping
+    // Keyboard to MIDI mapping (delegated to EditorEventHandlers)
     int keyToMidiNote(int keyCode) const;
     void sendMidiNote(int note, float velocity, bool noteOn);
     
@@ -174,6 +174,9 @@ private:
     int64_t adsrFadeOutStartTime;  // Time when fade-out started (milliseconds)
     static constexpr int64_t ADSR_FADE_OUT_DURATION_MS = 1000;  // 1 second fade-out
     
+    // Track if waveform has been initialized (to avoid calling updateWaveform() multiple times)
+    bool waveformInitialized;
+    
     // Update ADSR visualization and send to processor
     void updateADSR();
     
@@ -188,6 +191,13 @@ private:
     
     // Update BPM display in top right corner
     void updateBPMDisplay();
+    
+    // Friend classes for refactoring (to comply with 500-line rule)
+    friend class EncoderSetupManager;
+    friend class EditorLayoutManager;
+    friend class EditorEventHandlers;
+    friend class EditorUpdateMethods;
+    friend class EditorTimerCallback;
     
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(Op1CloneAudioProcessorEditor)
 };
