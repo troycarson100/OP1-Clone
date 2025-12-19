@@ -171,6 +171,19 @@ private:
     int projectBPM;  // Project BPM (default 120)
     bool isResettingADSR;  // Flag to prevent showing ADSR visualization during reset
     
+    // Shift mode parameters (LP filter and loop)
+    float lpCutoffHz;      // Low-pass filter cutoff (20-20000 Hz)
+    float lpResonance;     // Low-pass filter resonance (0.1-10.0)
+    float lpEnvAmount;     // Envelope amount (-1.0 to 1.0, positive/negative) - DEPRECATED, kept for future use
+    float lpDriveDb;       // Drive amount in dB (0.0-24.0 dB)
+    float lofiAmount;       // Lofi effect amount (0.0-1.0)
+    bool isPolyphonic;      // Playback mode (true = poly, false = mono)
+    int loopStartPoint;    // Loop start point (sample index)
+    int loopEndPoint;      // Loop end point (sample index)
+    bool loopEnabled;      // Loop on/off
+    float loopEnvAttack;   // Loop envelope attack (ms) - DEPRECATED, kept for future use
+    float loopEnvRelease; // Loop envelope release (ms) - DEPRECATED, kept for future use
+    
     // Parameter display fade-out tracking
     int64_t lastEncoderChangeTime;  // Time when encoder was last moved (milliseconds)
     float parameterDisplayAlpha;  // Current alpha for fade-out (0.0 to 1.0)
@@ -195,9 +208,13 @@ private:
     
     // Update waveform visualization with current parameters
     void updateWaveformVisualization();
+    void updateLoopControlsState();
     
     // Update BPM display in top right corner
     void updateBPMDisplay();
+    
+    // Update parameter display labels based on shift state
+    void updateParameterDisplayLabels();
     
     // Friend classes for refactoring (to comply with 500-line rule)
     friend class EncoderSetupManager;

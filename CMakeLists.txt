@@ -41,6 +41,11 @@ target_sources(Op1Clone PRIVATE
     Source/Core/TimePitchError.cpp
     Source/Core/GranularTimeWarp.cpp
     Source/Core/SignalsmithTimePitch.cpp
+    Source/Core/BiquadFilter.cpp
+    Source/Core/MoogLadderFilter.cpp
+    Source/Core/EnvelopeGenerator.cpp
+    Source/Core/DriveEffect.cpp
+    Source/Core/LofiEffect.cpp
 )
 
 # JUCE wrapper source files

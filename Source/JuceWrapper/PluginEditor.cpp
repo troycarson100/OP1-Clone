@@ -70,6 +70,19 @@ Op1CloneAudioProcessorEditor::Op1CloneAudioProcessorEditor(Op1CloneAudioProcesso
     sampleLength = 0;
     waveformInitialized = false;
     
+    // Initialize shift mode parameters
+    lpCutoffHz = 1000.0f;
+    lpResonance = 1.0f;
+    lpEnvAmount = 0.0f;  // DEPRECATED - kept for future use
+    lpDriveDb = 0.0f;
+    lofiAmount = 0.0f;
+    isPolyphonic = true;
+    loopStartPoint = 0;
+    loopEndPoint = 0;
+    loopEnabled = false;
+    loopEnvAttack = 10.0f;
+    loopEnvRelease = 100.0f;
+    
     // Setup MIDI status component
     addAndMakeVisible(&midiStatusComponent);
     midiStatusComponent.setMidiHandler(&audioProcessor.getMidiInputHandler());
@@ -358,5 +371,17 @@ void Op1CloneAudioProcessorEditor::updateBPMDisplay() {
     // Delegate to update methods manager (extracted to comply with 500-line rule)
     EditorUpdateMethods updateMethods(this);
     updateMethods.updateBPMDisplay();
+}
+
+void Op1CloneAudioProcessorEditor::updateParameterDisplayLabels() {
+    // Delegate to update methods manager (extracted to comply with 500-line rule)
+    EditorUpdateMethods updateMethods(this);
+    updateMethods.updateParameterDisplayLabels();
+}
+
+void Op1CloneAudioProcessorEditor::updateLoopControlsState() {
+    // Delegate to update methods manager (extracted to comply with 500-line rule)
+    EditorUpdateMethods updateMethods(this);
+    updateMethods.updateLoopControlsState();
 }
 

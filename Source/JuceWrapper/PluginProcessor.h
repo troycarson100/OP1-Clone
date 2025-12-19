@@ -60,6 +60,26 @@ public:
     // Get source sample rate (for time calculations)
     double getSourceSampleRate() const;
     
+    // Set LP filter parameters
+    void setLPFilterCutoff(float cutoffHz);
+    void setLPFilterResonance(float resonance);
+    void setLPFilterEnvAmount(float amount);  // -1.0 to 1.0 (DEPRECATED - kept for future use)
+    void setLPFilterDrive(float driveDb);     // 0.0 to 24.0 dB
+    
+    // Set loop envelope parameters (for filter modulation) (DEPRECATED - kept for future use)
+    void setLoopEnvAttack(float attackMs);
+    void setLoopEnvRelease(float releaseMs);
+    
+    // Set lofi effect parameters
+    void setLofiAmount(float amount);  // 0.0 to 1.0
+    
+    // Set playback mode (mono or poly)
+    void setPlaybackMode(bool polyphonic);  // true = poly, false = mono
+    
+    // Set loop parameters
+    void setLoopEnabled(bool enabled);
+    void setLoopPoints(int startPoint, int endPoint);
+    
     // Get MIDI input handler (for device management and UI)
     MidiInputHandler& getMidiInputHandler() { return midiInputHandler; }
     

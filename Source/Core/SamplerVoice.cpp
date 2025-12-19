@@ -5,14 +5,12 @@
 #include <cstring>
 #include <fstream>
 #include <chrono>
+#include <limits>
 
 namespace Core {
 
 SamplerVoice::SamplerVoice()
-    : sampleData(nullptr)
-    , sampleLength(0)
-    , sourceSampleRate(44100.0)
-    , playhead(0.0)
+    : playhead(0.0)
     , active(false)
     , currentNote(60)
     , rootMidiNote(60)
@@ -37,6 +35,9 @@ SamplerVoice::SamplerVoice()
     , sampleReadPos(0.0)
     , warpEnabled(true)
     , primeRemainingSamples(0)
+    , loopEnabled(false)
+    , loopStartPoint(0)
+    , loopEndPoint(0)
     , lastActualInN(0)
     , lastOutN(0)
     , lastPrimeRemaining(0)
@@ -56,22 +57,26 @@ SamplerVoice::~SamplerVoice() {
     delete[] outputBuffer;
 }
 
-void SamplerVoice::setSample(const float* data, int length, double sourceRate) {
-    sampleData = data;
-    sampleLength = length;
-    sourceSampleRate = sourceRate;
-    playhead = 0.0;
-    sampleReadPos = 0.0;
-    active = false;
-    rootMidiNote = 60; // Default root note is C4
+void SamplerVoice::setSampleData(SampleDataPtr sampleData) {
+    // Capture sample data snapshot (thread-safe, immutable)
+    sampleData_ = sampleData;
     
-    // Initialize start/end points to full sample
-    startPoint = 0;
-    endPoint = length;
-    
-    // TimePitchProcessor will be prepared when we know the output sample rate
-    // (done in process() or prepareToPlay equivalent)
+    if (sampleData_ && sampleData_->length > 0) {
+        // Initialize start/end points to full sample
+        startPoint = 0;
+        endPoint = sampleData_->length;
+    } else {
+        startPoint = 0;
+        endPoint = 0;
+    }
 }
+
+// DEPRECATED: setSample() removed - voices now capture sample on noteOn only
+// This prevents raw pointer usage and ensures thread safety
+// void SamplerVoice::setSample(const float* data, int length, double sourceRate) {
+//     // DELETED - do not accept raw pointers
+//     // Voices must only receive SampleDataPtr via setSampleData() on noteOn
+// }
 
 void SamplerVoice::noteOn(int note, float velocity) {
     // #region agent log
@@ -89,7 +94,7 @@ void SamplerVoice::noteOn(int note, float velocity) {
     sampleReadPos = static_cast<double>(startPoint); // Start from start point
     
     bool wasActive = active;
-    active = (sampleData != nullptr && sampleLength > 0);
+    active = (sampleData_ != nullptr && sampleData_->length > 0 && !sampleData_->mono.empty());
     
     // Calculate pitch in semitones and set it (include repitch offset)
     if (warpEnabled && timePitchProcessor && active) {
@@ -150,7 +155,47 @@ void SamplerVoice::noteOff(int note) {
 }
 
 void SamplerVoice::process(float** output, int numChannels, int numSamples, double sampleRate) {
-    if (!active || sampleData == nullptr || sampleLength == 0 || output == nullptr) {
+    // #region agent log
+    {
+        std::ofstream log("/Users/troycarson/Documents/JUCE Projects/OP1-Clone/.cursor/debug.log", std::ios::app);
+        if (log.is_open()) {
+            log << "{\"sessionId\":\"debug-session\",\"runId\":\"run1\",\"hypothesisId\":\"H1,H4\",\"location\":\"SamplerVoice.cpp:189\",\"message\":\"process entry\",\"data\":{\"active\":" << (active ? 1 : 0) << ",\"hasSampleData_\":" << (sampleData_ != nullptr ? 1 : 0) << ",\"length\":" << (sampleData_ ? sampleData_->length : 0) << ",\"outputPtr\":" << (void*)output << "},\"timestamp\":" << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() << "}\n";
+        }
+    }
+    // #endregion
+    
+    // Validate sample data - comprehensive safety checks
+    if (!active || !sampleData_ || sampleData_->length <= 0 || 
+        sampleData_->mono.empty() || sampleData_->mono.data() == nullptr || 
+        output == nullptr) {
+        // #region agent log
+        {
+            std::ofstream log("/Users/troycarson/Documents/JUCE Projects/OP1-Clone/.cursor/debug.log", std::ios::app);
+            if (log.is_open()) {
+                log << "{\"sessionId\":\"debug-session\",\"runId\":\"run1\",\"hypothesisId\":\"H4\",\"location\":\"SamplerVoice.cpp:198\",\"message\":\"process early return\",\"data\":{\"active\":" << (active ? 1 : 0) << ",\"hasSampleData_\":" << (sampleData_ != nullptr ? 1 : 0) << ",\"length\":" << (sampleData_ ? sampleData_->length : 0) << ",\"empty\":" << (sampleData_ && sampleData_->mono.empty() ? 1 : 0) << "},\"timestamp\":" << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() << "}\n";
+            }
+        }
+        // #endregion
+        return;
+    }
+    
+    // Store local copies for safe access throughout the function
+    // Vector won't reallocate, pointer stays valid for the duration of this call
+    // Additional validation: ensure data pointer is valid
+    const float* data = sampleData_->mono.data();
+    const int len = sampleData_->length;
+    const double sourceSampleRate = sampleData_->sourceSampleRate;
+    
+    // Final safety check: ensure data pointer is valid and length matches vector size
+    if (!data || len <= 0 || len != static_cast<int>(sampleData_->mono.size())) {
+        // #region agent log
+        {
+            std::ofstream log("/Users/troycarson/Documents/JUCE Projects/OP1-Clone/.cursor/debug.log", std::ios::app);
+            if (log.is_open()) {
+                log << "{\"sessionId\":\"debug-session\",\"runId\":\"run1\",\"hypothesisId\":\"H4\",\"location\":\"SamplerVoice.cpp:210\",\"message\":\"data validation failed\",\"data\":{\"dataNull\":" << (data == nullptr ? 1 : 0) << ",\"len\":" << len << ",\"vectorSize\":" << sampleData_->mono.size() << "},\"timestamp\":" << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() << "}\n";
+            }
+        }
+        // #endregion
         return;
     }
     
@@ -183,10 +228,11 @@ void SamplerVoice::process(float** output, int numChannels, int numSamples, doub
         }
     }
     
-    // Base amplitude (velocity * gain) with scaling to prevent clipping
-    // Scale down to prevent clipping when multiple voices play or velocity is high
-    const float amplitudeScale = 0.5f; // Reduce overall amplitude
-    float baseAmplitude = currentVelocity * gain * amplitudeScale;
+        // Base amplitude (velocity * gain) with scaling to prevent clipping
+        // Scale down significantly to prevent clipping when multiple voices play
+        // With up to 16 voices, we need much more headroom
+        const float amplitudeScale = 0.15f; // Reduce overall amplitude (was 0.25f, now 0.15f for better polyphony)
+        float baseAmplitude = currentVelocity * gain * amplitudeScale;
     
     // Starting envelope value for release (captured when release starts)
     float releaseStartValue = 1.0f;
@@ -206,6 +252,11 @@ void SamplerVoice::process(float** output, int numChannels, int numSamples, doub
         // timeRatio is already set to 1.0 in noteOn()
         double speed = sourceSampleRate / sampleRate;
         
+        // Guard against invalid speed
+        if (!std::isfinite(speed) || speed <= 0.0) {
+            speed = 1.0;
+        }
+        
         // Handle latency priming: feed zeros until primeRemainingSamples is consumed
         int samplesToPrime = 0;
         if (primeRemainingSamples > 0) {
@@ -223,29 +274,57 @@ void SamplerVoice::process(float** output, int numChannels, int numSamples, doub
                 inputBuffer[i] = 0.0f;
             } else {
                 // Normal phase: read from sample at 1x speed (respecting start/end points)
-                if (sampleReadPos >= static_cast<double>(endPoint)) {
-                    inputBuffer[i] = 0.0f;
+                // Bounds-safe interpolation
+                if (sampleReadPos >= static_cast<double>(endPoint - 1)) {
+                    // At or past last valid index - use last sample value
+                    int lastIdx = std::max(startPoint, endPoint - 1);
+                    if (lastIdx >= 0 && lastIdx < len) {
+                        inputBuffer[i] = data[lastIdx] * sampleGain;
+                    } else {
+                        inputBuffer[i] = 0.0f;
+                    }
                 } else if (sampleReadPos < static_cast<double>(startPoint)) {
                     inputBuffer[i] = 0.0f;
                 } else {
+                    // Safe interpolation: idx1 is guaranteed < endPoint (which is <= len)
                     int idx0 = static_cast<int>(sampleReadPos);
                     int idx1 = idx0 + 1;
+                    
+                    // Clamp to valid range
                     if (idx0 < startPoint) idx0 = startPoint;
                     if (idx0 >= endPoint) idx0 = endPoint - 1;
                     if (idx1 < startPoint) idx1 = startPoint;
                     if (idx1 >= endPoint) idx1 = endPoint - 1;
-                    float frac = static_cast<float>(sampleReadPos - static_cast<double>(idx0));
-                    frac = std::max(0.0f, std::min(1.0f, frac));
-                    float s0 = sampleData[idx0];
-                    float s1 = sampleData[idx1];
-                    inputBuffer[i] = (s0 * (1.0f - frac) + s1 * frac) * sampleGain; // Apply sample gain
+                    
+                    // Final bounds check (defensive)
+                    if (idx0 < 0 || idx0 >= len || idx1 < 0 || idx1 >= len) {
+                        inputBuffer[i] = 0.0f;
+                    } else {
+                        float frac = static_cast<float>(sampleReadPos - static_cast<double>(idx0));
+                        frac = std::max(0.0f, std::min(1.0f, frac));
+                        float s0 = data[idx0];
+                        float s1 = data[idx1];
+                        inputBuffer[i] = (s0 * (1.0f - frac) + s1 * frac) * sampleGain;
+                    }
                 }
+                
                 sampleReadPos += speed;
+                
+                // Guard against NaN/Inf
+                if (!std::isfinite(sampleReadPos)) {
+                    sampleReadPos = static_cast<double>(startPoint);
+                }
+                
+                // Handle looping: if loop is enabled and we've reached the end, loop back to start
+                if (loopEnabled && sampleReadPos >= static_cast<double>(loopEndPoint) && loopEndPoint > loopStartPoint) {
+                    // Loop back to loop start point
+                    sampleReadPos = static_cast<double>(loopStartPoint);
+                }
             }
         }
         
-        // If we've hit the end point, start release
-        if (sampleReadPos >= static_cast<double>(endPoint) && !inRelease) {
+        // If we've hit the end point (and not looping), start release
+        if (sampleReadPos >= static_cast<double>(endPoint) && !inRelease && !loopEnabled) {
             inRelease = true;
             releaseCounter = 0;
             releaseStartValue = envelopeValue;
@@ -365,68 +444,129 @@ void SamplerVoice::process(float** output, int numChannels, int numSamples, doub
         double pitchRatio = std::pow(2.0, totalSemitones / 12.0);
         double speed = (sourceSampleRate / sampleRate) * pitchRatio;
         
+        // Guard against invalid speed
+        if (!std::isfinite(speed) || speed <= 0.0) {
+            speed = 1.0;
+        }
+        
+        // Guard against invalid playhead
+        if (!std::isfinite(playhead)) {
+            playhead = static_cast<double>(startPoint);
+        }
+        
         for (int i = 0; i < numSamples; ++i) {
-            int index0 = static_cast<int>(playhead);
-            
-            if (index0 >= endPoint - 1 || index0 < startPoint) {
-                if (!inRelease && index0 >= endPoint - 1) {
-                    inRelease = true;
-                    releaseCounter = 0;
-                    releaseStartValue = envelopeValue;
-                }
-            }
-            
-            if (inRelease) {
-                if (releaseCounter == 0) {
-                    releaseStartValue = envelopeValue;
-                }
-                if (releaseCounter < releaseSamples) {
-                    float releaseProgress = static_cast<float>(releaseCounter) / static_cast<float>(releaseSamples);
-                    envelopeValue = releaseStartValue * (1.0f - releaseProgress);
-                    releaseCounter++;
+            // Bounds-safe sample reading
+            if (playhead >= static_cast<double>(endPoint - 1)) {
+                // At or past last valid index - use last sample value
+                int lastIdx = std::max(startPoint, endPoint - 1);
+                if (lastIdx >= 0 && lastIdx < len) {
+                    float sample = data[lastIdx] * sampleGain;
+                    
+                    // Handle release if we hit the end
+                    if (!inRelease) {
+                        inRelease = true;
+                        releaseCounter = 0;
+                        releaseStartValue = envelopeValue;
+                    }
+                    
+                    // Process envelope
+                    if (releaseCounter < releaseSamples) {
+                        float releaseProgress = static_cast<float>(releaseCounter) / static_cast<float>(releaseSamples);
+                        envelopeValue = releaseStartValue * (1.0f - releaseProgress);
+                        releaseCounter++;
+                    } else {
+                        envelopeValue = 0.0f;
+                        active = false;
+                        break;
+                    }
+                    
+                    float amplitude = baseAmplitude * envelopeValue;
+                    float outputSample = sample * amplitude;
+                    for (int ch = 0; ch < numChannels; ++ch) {
+                        if (output[ch] != nullptr) {
+                            output[ch][i] += outputSample;
+                        }
+                    }
                 } else {
-                    envelopeValue = 0.0f;
-                    active = false;
-                    break;
+                    // Invalid index - output silence
+                    for (int ch = 0; ch < numChannels; ++ch) {
+                        if (output[ch] != nullptr) {
+                            output[ch][i] += 0.0f;
+                        }
+                    }
+                }
+            } else if (playhead < static_cast<double>(startPoint)) {
+                // Before start point - output silence
+                for (int ch = 0; ch < numChannels; ++ch) {
+                    if (output[ch] != nullptr) {
+                        output[ch][i] += 0.0f;
+                    }
                 }
             } else {
-                // ADSR envelope phases
-                if (attackCounter < attackSamples) {
-                    // Attack phase: 0 to 1.0
-                    envelopeValue = static_cast<float>(attackCounter) / static_cast<float>(attackSamples);
-                    attackCounter++;
-                } else if (decayCounter < decaySamples) {
-                    // Decay phase: 1.0 to sustain level
-                    float decayProgress = static_cast<float>(decayCounter) / static_cast<float>(decaySamples);
-                    envelopeValue = 1.0f - (1.0f - sustainLevel) * decayProgress;
-                    decayCounter++;
-                } else {
-                    // Sustain phase: hold at sustain level
-                    envelopeValue = sustainLevel;
-                }
-            }
-            
-            float amplitude = baseAmplitude * envelopeValue;
-            
-            float sample = 0.0f;
-            if (index0 >= startPoint && index0 < endPoint - 1) {
+                // Safe interpolation: idx1 is guaranteed < endPoint (which is <= len)
+                int index0 = static_cast<int>(playhead);
                 int index1 = index0 + 1;
+                
+                // Clamp to valid range
+                if (index0 < startPoint) index0 = startPoint;
+                if (index0 >= endPoint) index0 = endPoint - 1;
+                if (index1 < startPoint) index1 = startPoint;
                 if (index1 >= endPoint) index1 = endPoint - 1;
-                float fraction = static_cast<float>(playhead - static_cast<double>(index0));
-                fraction = std::max(0.0f, std::min(1.0f, fraction));
-                float s0 = sampleData[index0];
-                float s1 = sampleData[index1];
-                sample = (s0 * (1.0f - fraction) + s1 * fraction) * sampleGain; // Apply sample gain
-            }
-            
-            float outputSample = sample * amplitude;
-            for (int ch = 0; ch < numChannels; ++ch) {
-                if (output[ch] != nullptr) {
-                    output[ch][i] += outputSample;
+                
+                // Process envelope
+                if (inRelease) {
+                    if (releaseCounter == 0) {
+                        releaseStartValue = envelopeValue;
+                    }
+                    if (releaseCounter < releaseSamples) {
+                        float releaseProgress = static_cast<float>(releaseCounter) / static_cast<float>(releaseSamples);
+                        envelopeValue = releaseStartValue * (1.0f - releaseProgress);
+                        releaseCounter++;
+                    } else {
+                        envelopeValue = 0.0f;
+                        active = false;
+                        break;
+                    }
+                } else {
+                    // ADSR envelope phases
+                    if (attackCounter < attackSamples) {
+                        envelopeValue = static_cast<float>(attackCounter) / static_cast<float>(attackSamples);
+                        attackCounter++;
+                    } else if (decayCounter < decaySamples) {
+                        float decayProgress = static_cast<float>(decayCounter) / static_cast<float>(decaySamples);
+                        envelopeValue = 1.0f - (1.0f - sustainLevel) * decayProgress;
+                        decayCounter++;
+                    } else {
+                        envelopeValue = sustainLevel;
+                    }
+                }
+                
+                float amplitude = baseAmplitude * envelopeValue;
+                
+                // Final bounds check (defensive)
+                float sample = 0.0f;
+                if (index0 >= 0 && index0 < len && index1 >= 0 && index1 < len) {
+                    float fraction = static_cast<float>(playhead - static_cast<double>(index0));
+                    fraction = std::max(0.0f, std::min(1.0f, fraction));
+                    float s0 = data[index0];
+                    float s1 = data[index1];
+                    sample = (s0 * (1.0f - fraction) + s1 * fraction) * sampleGain;
+                }
+                
+                float outputSample = sample * amplitude;
+                for (int ch = 0; ch < numChannels; ++ch) {
+                    if (output[ch] != nullptr) {
+                        output[ch][i] += outputSample;
+                    }
                 }
             }
             
             playhead += speed;
+            
+            // Guard against NaN/Inf
+            if (!std::isfinite(playhead)) {
+                playhead = static_cast<double>(startPoint);
+            }
         }
         
         if (playhead >= static_cast<double>(endPoint) && inRelease && releaseCounter >= releaseSamples) {

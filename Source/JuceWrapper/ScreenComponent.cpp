@@ -48,3 +48,15 @@ void ScreenComponent::setSampleGain(float gain) {
     waveformComponent.setSampleGain(gain);
 }
 
+void ScreenComponent::setLoopStartPoint(int sampleIndex) {
+    waveformComponent.setLoopStartPoint(sampleIndex);
+}
+
+void ScreenComponent::setLoopEndPoint(int sampleIndex) {
+    waveformComponent.setLoopEndPoint(sampleIndex);
+}
+
+void ScreenComponent::setLoopEnabled(bool enabled) {
+    waveformComponent.setLoopEnabled(enabled);
+}
+

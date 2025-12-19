@@ -180,6 +180,10 @@ void EditorUpdateMethods::updateWaveformVisualization() {
     editor->screenComponent.setStartPoint(editor->startPoint);
     editor->screenComponent.setEndPoint(editor->endPoint);
     editor->screenComponent.setSampleGain(editor->sampleGain);
+    // Update loop markers
+    editor->screenComponent.setLoopStartPoint(editor->loopStartPoint);
+    editor->screenComponent.setLoopEndPoint(editor->loopEndPoint);
+    editor->screenComponent.setLoopEnabled(editor->loopEnabled);
     // Force repaint to show the zoomed waveform
     editor->screenComponent.repaint();
 }
@@ -189,5 +193,48 @@ void EditorUpdateMethods::updateBPMDisplay() {
     juce::String bpmText = "BPM: " + juce::String(editor->projectBPM);
     editor->bpmDisplayLabel.setText(bpmText, juce::dontSendNotification);
     editor->bpmDisplayLabel.repaint();
+}
+
+void EditorUpdateMethods::updateParameterDisplayLabels() {
+    // Update parameter display labels based on shift state
+    bool shiftEnabled = editor->shiftToggleButton.getToggleState();
+    
+    if (shiftEnabled) {
+        // Shift mode: LP filter and loop parameters
+        editor->paramDisplay1.setLabel("CUTOFF");
+        editor->paramDisplay2.setLabel("RES.");
+        editor->paramDisplay3.setLabel("DRIVE");
+        editor->paramDisplay4.setLabel("LOFI");
+        editor->paramDisplay5.setLabel("L.START");
+        editor->paramDisplay6.setLabel("L.END");
+        editor->paramDisplay7.setLabel("LOOP");
+        editor->paramDisplay8.setLabel("PLAY");
+    } else {
+        // Normal mode: Pitch, Start, End, Gain, ADSR
+        editor->paramDisplay1.setLabel("PITCH");
+        editor->paramDisplay2.setLabel("START");
+        editor->paramDisplay3.setLabel("END");
+        editor->paramDisplay4.setLabel("GAIN");
+        editor->paramDisplay5.setLabel("ATTACK");
+        editor->paramDisplay6.setLabel("DECAY");
+        editor->paramDisplay7.setLabel("SUSTAIN");
+        editor->paramDisplay8.setLabel("RELEASE");
+    }
+}
+
+void EditorUpdateMethods::updateLoopControlsState() {
+    // Grey out loop controls when loop is disabled
+    bool loopEnabled = editor->loopEnabled;
+    juce::Colour enabledColor = juce::Colours::white;
+    juce::Colour disabledColor = juce::Colours::grey;
+    
+    // Only update if in shift mode
+    if (editor->shiftToggleButton.getToggleState()) {
+        // Update loop start/end displays (5, 6) - grey out when disabled
+        editor->paramDisplay5.setColour(juce::Label::textColourId, loopEnabled ? enabledColor : disabledColor);
+        editor->paramDisplay6.setColour(juce::Label::textColourId, loopEnabled ? enabledColor : disabledColor);
+        // Loop toggle itself (7) is always enabled (white)
+        editor->paramDisplay7.setColour(juce::Label::textColourId, enabledColor);
+    }
 }
 

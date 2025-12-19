@@ -23,6 +23,11 @@ public:
     // Set sample gain for visual scaling
     void setSampleGain(float gain);
     
+    // Set loop points and enable state
+    void setLoopStartPoint(int sampleIndex);
+    void setLoopEndPoint(int sampleIndex);
+    void setLoopEnabled(bool enabled);
+    
     // Clear waveform
     void clear();
     
@@ -34,6 +39,11 @@ private:
     int endPoint;
     float sampleGain;
     
+    // Loop parameters
+    int loopStartPoint;
+    int loopEndPoint;
+    bool loopEnabled;
+    
     // OP-1 style colors
     juce::Colour waveformColor;
     juce::Colour backgroundColor;
@@ -43,4 +53,5 @@ private:
     // Draw waveform using min/max method (OP-1 style)
     void drawWaveform(juce::Graphics& g, juce::Rectangle<int> bounds);
 };
+
 

@@ -29,6 +29,12 @@ public:
     // Update BPM display in top right corner
     void updateBPMDisplay();
     
+    // Update parameter display labels based on shift state
+    void updateParameterDisplayLabels();
+    
+    // Update loop controls state (grey out when disabled)
+    void updateLoopControlsState();
+    
 private:
     Op1CloneAudioProcessorEditor* editor;
 };

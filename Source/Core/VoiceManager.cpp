@@ -7,17 +7,20 @@ namespace Core {
 
 VoiceManager::VoiceManager()
     : nextVoiceIndex(0)
+    , isPolyphonicMode(true)
 {
 }
 
 VoiceManager::~VoiceManager() {
 }
 
-void VoiceManager::setSample(const float* data, int length, double sourceSampleRate) {
-    for (auto& voice : voices) {
-        voice.setSample(data, length, sourceSampleRate);
-    }
-}
+// DEPRECATED: setSample() removed - voices now capture sample on noteOn only
+// This prevents raw pointer usage and ensures thread safety
+// void VoiceManager::setSample(const float* data, int length, double sourceSampleRate) {
+//     // DELETED - do not push raw pointers to voices
+//     // Sample loading must NOT touch voices at all
+//     // Voices capture SampleDataPtr snapshot on noteOn and hold it until voice ends
+// }
 
 void VoiceManager::setRootNote(int rootNote) {
     for (auto& voice : voices) {
@@ -50,16 +53,48 @@ int VoiceManager::allocateVoice() {
 }
 
 void VoiceManager::noteOn(int note, float velocity) {
+    // Legacy method - call with nullptr sample data (voice will use old method)
+    noteOn(note, velocity, nullptr);
+}
+
+void VoiceManager::noteOn(int note, float velocity, SampleDataPtr sampleData) {
+    // In mono mode, turn off all currently playing voices
+    if (!isPolyphonicMode) {
+        for (auto& voice : voices) {
+            if (voice.isPlaying()) {
+                voice.noteOff(voice.getCurrentNote());
+            }
+        }
+    }
+    
     int voiceIndex = allocateVoice();
     
     // #region agent log
     {
         std::ofstream log("/Users/troycarson/Documents/JUCE Projects/OP1-Clone/.cursor/debug.log", std::ios::app);
         if (log.is_open()) {
-            log << "{\"sessionId\":\"debug-session\",\"runId\":\"run1\",\"hypothesisId\":\"F\",\"location\":\"VoiceManager.cpp:50\",\"message\":\"Voice allocated for note\",\"data\":{\"note\":" << note << ",\"velocity\":" << velocity << ",\"voiceIndex\":" << voiceIndex << ",\"wasActive\":" << (voices[voiceIndex].isActive() ? 1 : 0) << "},\"timestamp\":" << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() << "}\n";
+            log << "{\"sessionId\":\"debug-session\",\"runId\":\"run1\",\"hypothesisId\":\"F\",\"location\":\"VoiceManager.cpp:61\",\"message\":\"Voice allocated for note\",\"data\":{\"note\":" << note << ",\"velocity\":" << velocity << ",\"voiceIndex\":" << voiceIndex << ",\"wasActive\":" << (voices[voiceIndex].isActive() ? 1 : 0) << ",\"hasSampleData\":" << (sampleData != nullptr ? 1 : 0) << "},\"timestamp\":" << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() << "}\n";
         }
     }
     // #endregion
+    
+    // Set sample data snapshot before triggering note
+    // Comprehensive validation before setting
+    if (!sampleData || sampleData->length <= 0 || 
+        sampleData->mono.empty() || sampleData->mono.data() == nullptr) {
+        // No valid sample - voice will remain inactive
+        // #region agent log
+        {
+            std::ofstream log("/Users/troycarson/Documents/JUCE Projects/OP1-Clone/.cursor/debug.log", std::ios::app);
+            if (log.is_open()) {
+                log << "{\"sessionId\":\"debug-session\",\"runId\":\"run1\",\"hypothesisId\":\"F\",\"location\":\"VoiceManager.cpp:80\",\"message\":\"noteOn with invalid sample data\",\"data\":{\"note\":" << note << ",\"sampleDataNull\":" << (sampleData == nullptr ? 1 : 0) << ",\"length\":" << (sampleData ? sampleData->length : 0) << ",\"empty\":" << (sampleData && sampleData->mono.empty() ? 1 : 0) << "},\"timestamp\":" << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() << "}\n";
+            }
+        }
+        // #endregion
+        return; // Don't trigger note if no valid sample
+    }
+    
+    voices[voiceIndex].setSampleData(sampleData);
     
     voices[voiceIndex].noteOn(note, velocity);
 }
@@ -123,6 +158,18 @@ void VoiceManager::setSampleGain(float gain) {
     }
 }
 
+void VoiceManager::setLoopEnabled(bool enabled) {
+    for (auto& voice : voices) {
+        voice.setLoopEnabled(enabled);
+    }
+}
+
+void VoiceManager::setLoopPoints(int startPoint, int endPoint) {
+    for (auto& voice : voices) {
+        voice.setLoopPoints(startPoint, endPoint);
+    }
+}
+
 float VoiceManager::getRepitch() const {
     if (MAX_VOICES > 0) {
         return voices[0].getRepitch();
@@ -164,6 +211,20 @@ void VoiceManager::getDebugInfo(int& actualInN, int& outN, int& primeRemaining, 
     outN = 0;
     primeRemaining = 0;
     nonZeroCount = 0;
+}
+
+void VoiceManager::setPolyphonic(bool polyphonic) {
+    isPolyphonicMode = polyphonic;
+}
+
+int VoiceManager::getActiveVoiceCount() const {
+    int count = 0;
+    for (const auto& voice : voices) {
+        if (voice.isPlaying()) {
+            count++;
+        }
+    }
+    return count;
 }
 
 } // namespace Core

@@ -2,6 +2,7 @@
 
 #include "SamplerVoice.h"
 #include "MidiEvent.h"
+#include "SampleData.h"
 #include <array>
 
 namespace Core {
@@ -15,8 +16,9 @@ public:
     VoiceManager();
     ~VoiceManager();
     
-    // Set sample for all voices
-    void setSample(const float* data, int length, double sourceSampleRate);
+    // DEPRECATED: setSample() removed - voices now capture sample on noteOn only
+    // This method is disabled to prevent raw pointer usage
+    // void setSample(const float* data, int length, double sourceSampleRate); // DELETED
     
     // Set root note for all voices
     void setRootNote(int rootNote);
@@ -26,6 +28,9 @@ public:
     
     // Handle note on - allocates a voice
     void noteOn(int note, float velocity);
+    
+    // Handle note on with sample data snapshot (thread-safe)
+    void noteOn(int note, float velocity, SampleDataPtr sampleData);
     
     // Handle note off - releases voice playing this note
     void noteOff(int note);
@@ -45,6 +50,10 @@ public:
     void setEndPoint(int sampleIndex);
     void setSampleGain(float gain);
     
+    // Set loop parameters for all voices
+    void setLoopEnabled(bool enabled);
+    void setLoopPoints(int startPoint, int endPoint);
+    
     // Get sample editing parameters (from first voice)
     float getRepitch() const;
     int getStartPoint() const;
@@ -54,9 +63,16 @@ public:
     // Get debug info from first active voice (for UI)
     void getDebugInfo(int& actualInN, int& outN, int& primeRemaining, int& nonZeroCount) const;
     
+    // Get count of active voices (for envelope triggering)
+    int getActiveVoiceCount() const;
+    
+    // Set playback mode (mono or poly)
+    void setPolyphonic(bool polyphonic);  // true = poly, false = mono
+    
 private:
     std::array<SamplerVoice, MAX_VOICES> voices;
     int nextVoiceIndex; // For round-robin allocation
+    bool isPolyphonicMode; // true = poly, false = mono
     
     // Find a free voice, or steal the oldest one
     int allocateVoice();

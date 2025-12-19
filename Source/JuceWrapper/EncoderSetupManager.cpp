@@ -1,6 +1,7 @@
 #include "EncoderSetupManager.h"
 #include "PluginEditor.h"
 #include <juce_core/juce_core.h>
+#include <cmath>
 
 EncoderSetupManager::EncoderSetupManager(Op1CloneAudioProcessorEditor* editor)
     : editor(editor)
@@ -22,7 +23,20 @@ void EncoderSetupManager::setupEncoder1() {
     Op1CloneAudioProcessorEditor* ed = editor;  // Capture editor pointer, not 'this'
     ed->encoder1.onValueChanged = [ed](float value) {
         if (ed->shiftToggleButton.getToggleState()) {
-            // Shift mode: Encoder 1 does nothing (for now)
+            // Shift mode: Encoder 1 = LP Filter Cutoff (20-20000 Hz)
+            // Map 0-1 to 20-20000 Hz (logarithmic)
+            float normalized = value;
+            ed->lpCutoffHz = 20.0f * std::pow(1000.0f, normalized); // Logarithmic mapping
+            ed->lpCutoffHz = std::max(20.0f, std::min(20000.0f, ed->lpCutoffHz));
+            // Send to processor
+            ed->audioProcessor.setLPFilterCutoff(ed->lpCutoffHz);
+            // Update parameter display
+            ed->paramDisplay1.setValue(value);
+            if (ed->lpCutoffHz >= 1000.0f) {
+                ed->paramDisplay1.setValueText(juce::String(ed->lpCutoffHz / 1000.0f, 1) + "kHz");
+            } else {
+                ed->paramDisplay1.setValueText(juce::String(static_cast<int>(ed->lpCutoffHz)) + "Hz");
+            }
         } else {
             // Encoder 1: Repitch (-24 to +24 semitones)
             ed->repitchSemitones = (value - 0.5f) * 48.0f; // Map 0-1 to -24 to +24
@@ -39,7 +53,10 @@ void EncoderSetupManager::setupEncoder1() {
     ed->encoder1.onButtonPressed = [ed]() {
         // Encoder 1 button pressed - reset to default
         if (ed->shiftToggleButton.getToggleState()) {
-            // Shift mode: Encoder 1 does nothing (for now)
+            // Shift mode: Cutoff default = 1000 Hz
+            float defaultValue = std::log(1000.0f / 20.0f) / std::log(1000.0f);
+            ed->encoder1.setValue(defaultValue);
+            ed->encoder1.onValueChanged(defaultValue);
         } else {
             // Normal mode: Repitch default = 0 semitones (value = 0.5)
             ed->encoder1.setValue(0.5f);
@@ -52,7 +69,13 @@ void EncoderSetupManager::setupEncoder2() {
     Op1CloneAudioProcessorEditor* ed = editor;
     ed->encoder2.onValueChanged = [ed](float value) {
         if (ed->shiftToggleButton.getToggleState()) {
-            // Shift mode: Encoder 2 does nothing (for now)
+            // Shift mode: Encoder 2 = LP Filter Resonance (0.0-4.0)
+            ed->lpResonance = value * 4.0f; // Map 0-1 to 0.0-4.0
+            // Send to processor
+            ed->audioProcessor.setLPFilterResonance(ed->lpResonance);
+            // Update parameter display
+            ed->paramDisplay2.setValue(value);
+            ed->paramDisplay2.setValueText(juce::String(ed->lpResonance, 2));
         } else {
             // Encoder 2: Start point (0 to sampleLength)
             if (ed->sampleLength > 0) {
@@ -80,7 +103,10 @@ void EncoderSetupManager::setupEncoder2() {
     ed->encoder2.onButtonPressed = [ed]() {
         // Encoder 2 button pressed - reset to default
         if (ed->shiftToggleButton.getToggleState()) {
-            // Shift mode: Encoder 2 does nothing (for now)
+            // Shift mode: Resonance default = 1.0
+            float defaultValue = (1.0f - 0.1f) / 9.9f;
+            ed->encoder2.setValue(defaultValue);
+            ed->encoder2.onValueChanged(defaultValue);
         } else {
             // Normal mode: Start point default = 0 (value = 0.0)
             ed->encoder2.setValue(0.0f);
@@ -93,7 +119,12 @@ void EncoderSetupManager::setupEncoder3() {
     Op1CloneAudioProcessorEditor* ed = editor;
     ed->encoder3.onValueChanged = [ed](float value) {
         if (ed->shiftToggleButton.getToggleState()) {
-            // Shift mode: Encoder 3 does nothing (for now)
+            // Shift mode: Encoder 3 = Drive (0.0 to 24.0 dB)
+            ed->lpDriveDb = value * 24.0f;  // Map 0-1 to 0-24 dB
+            ed->audioProcessor.setLPFilterDrive(ed->lpDriveDb);
+            // Update parameter display 3 (Drive)
+            ed->paramDisplay3.setValue(value);
+            ed->paramDisplay3.setValueText(juce::String(ed->lpDriveDb, 1) + " dB");
         } else {
             // Encoder 3: End point (0 to sampleLength)
             if (ed->sampleLength > 0) {
@@ -121,7 +152,11 @@ void EncoderSetupManager::setupEncoder3() {
     ed->encoder3.onButtonPressed = [ed]() {
         // Encoder 3 button pressed - reset to default
         if (ed->shiftToggleButton.getToggleState()) {
-            // Shift mode: Encoder 3 does nothing (for now)
+            // Shift mode: Drive default = 0.0 dB (value = 0.0)
+            ed->lpDriveDb = 0.0f;
+            ed->audioProcessor.setLPFilterDrive(ed->lpDriveDb);
+            ed->encoder3.setValue(0.0f);
+            ed->encoder3.onValueChanged(0.0f);
         } else {
             // Normal mode: End point default = full length (value = 1.0)
             ed->encoder3.setValue(1.0f);
@@ -134,7 +169,13 @@ void EncoderSetupManager::setupEncoder4() {
     Op1CloneAudioProcessorEditor* ed = editor;
     ed->encoder4.onValueChanged = [ed](float value) {
         if (ed->shiftToggleButton.getToggleState()) {
-            // Shift mode: Encoder 4 does nothing (for now)
+            // Shift mode: Encoder 4 = Lofi (0.0 to 1.0)
+            ed->lofiAmount = value;
+            ed->audioProcessor.setLofiAmount(ed->lofiAmount);
+            // Update parameter display 4 (Lofi)
+            ed->paramDisplay4.setValue(value);
+            int lofiPercent = static_cast<int>(ed->lofiAmount * 100.0f);
+            ed->paramDisplay4.setValueText(juce::String(lofiPercent) + "%");
         } else {
             // Encoder 4: Sample gain (0.0 to 2.0)
             ed->sampleGain = value * 2.0f;
@@ -149,7 +190,11 @@ void EncoderSetupManager::setupEncoder4() {
     ed->encoder4.onButtonPressed = [ed]() {
         // Encoder 4 button pressed - reset to default
         if (ed->shiftToggleButton.getToggleState()) {
-            // Shift mode: Encoder 4 does nothing (for now)
+            // Shift mode: Lofi default = 0.0 (value = 0.0)
+            ed->lofiAmount = 0.0f;
+            ed->audioProcessor.setLofiAmount(ed->lofiAmount);
+            ed->encoder4.setValue(0.0f);
+            ed->encoder4.onValueChanged(0.0f);
         } else {
             // Normal mode: Sample gain default = 1.0x (value = 0.5)
             ed->encoder4.setValue(0.5f);
@@ -162,7 +207,23 @@ void EncoderSetupManager::setupEncoder5() {
     Op1CloneAudioProcessorEditor* ed = editor;
     ed->encoder5.onValueChanged = [ed](float value) {
         if (ed->shiftToggleButton.getToggleState()) {
-            // Shift mode: Encoder 5 does nothing (for now)
+            // Shift mode: Encoder 5 = Loop Start Point (0 to sampleLength)
+            if (ed->sampleLength > 0) {
+                ed->loopStartPoint = static_cast<int>(value * static_cast<float>(ed->sampleLength));
+                // Ensure loop start is before loop end
+                if (ed->loopStartPoint >= ed->loopEndPoint) {
+                    ed->loopStartPoint = std::max(0, ed->loopEndPoint - 1);
+                }
+                // TODO: Send to processor
+                // Update parameter display
+                ed->paramDisplay5.setValue(value);
+                double loopStartTimeSeconds = static_cast<double>(ed->loopStartPoint) / ed->sampleRate;
+                if (loopStartTimeSeconds >= 1.0) {
+                    ed->paramDisplay5.setValueText(juce::String(loopStartTimeSeconds, 2) + "s");
+                } else {
+                    ed->paramDisplay5.setValueText(juce::String(static_cast<int>(loopStartTimeSeconds * 1000.0)) + "ms");
+                }
+            }
         } else {
             // Encoder 5: Attack (0-10000ms = 0-10 seconds)
             ed->adsrAttackMs = value * 10000.0f;
@@ -215,7 +276,9 @@ void EncoderSetupManager::setupEncoder5() {
     ed->encoder5.onButtonPressed = [ed]() {
         // Encoder 5 button pressed - reset to default
         if (ed->shiftToggleButton.getToggleState()) {
-            // Shift mode: Encoder 5 does nothing (for now)
+            // Shift mode: Loop Start default = 0 (value = 0.0)
+            ed->encoder5.setValue(0.0f);
+            ed->encoder5.onValueChanged(0.0f);
         } else {
             // Set flag to prevent showing ADSR visualization during reset
             ed->isResettingADSR = true;
@@ -237,7 +300,26 @@ void EncoderSetupManager::setupEncoder6() {
     Op1CloneAudioProcessorEditor* ed = editor;
     ed->encoder6.onValueChanged = [ed](float value) {
         if (ed->shiftToggleButton.getToggleState()) {
-            // Shift mode: Encoder 6 does nothing (for now)
+            // Shift mode: Encoder 6 = Loop End Point (0 to sampleLength)
+            if (ed->sampleLength > 0) {
+                ed->loopEndPoint = static_cast<int>(value * static_cast<float>(ed->sampleLength));
+                // Ensure loop end is after loop start
+                if (ed->loopEndPoint <= ed->loopStartPoint) {
+                    ed->loopEndPoint = std::min(ed->sampleLength, ed->loopStartPoint + 1);
+                }
+                // Send to processor
+                ed->audioProcessor.setLoopPoints(ed->loopStartPoint, ed->loopEndPoint);
+                // Update waveform visualization to show loop markers
+                ed->updateWaveformVisualization();
+                // Update parameter display
+                ed->paramDisplay6.setValue(value);
+                double loopEndTimeSeconds = static_cast<double>(ed->loopEndPoint) / ed->sampleRate;
+                if (loopEndTimeSeconds >= 1.0) {
+                    ed->paramDisplay6.setValueText(juce::String(loopEndTimeSeconds, 2) + "s");
+                } else {
+                    ed->paramDisplay6.setValueText(juce::String(static_cast<int>(loopEndTimeSeconds * 1000.0)) + "ms");
+                }
+            }
         } else {
             // Encoder 6: Decay (0-20000ms = 0-20 seconds)
             ed->adsrDecayMs = value * 20000.0f;
@@ -290,7 +372,9 @@ void EncoderSetupManager::setupEncoder6() {
     ed->encoder6.onButtonPressed = [ed]() {
         // Encoder 6 button pressed - reset to default
         if (ed->shiftToggleButton.getToggleState()) {
-            // Shift mode: Encoder 6 does nothing (for now)
+            // Shift mode: Loop End default = full length (value = 1.0)
+            ed->encoder6.setValue(1.0f);
+            ed->encoder6.onValueChanged(1.0f);
         } else {
             // Set flag to prevent showing ADSR visualization during reset
             ed->isResettingADSR = true;
@@ -312,7 +396,17 @@ void EncoderSetupManager::setupEncoder7() {
     Op1CloneAudioProcessorEditor* ed = editor;
     ed->encoder7.onValueChanged = [ed](float value) {
         if (ed->shiftToggleButton.getToggleState()) {
-            // Shift mode: Encoder 7 does nothing (for now)
+            // Shift mode: Encoder 7 = Loop (on/off)
+            ed->loopEnabled = value >= 0.5f;
+            ed->audioProcessor.setLoopEnabled(ed->loopEnabled);
+            ed->audioProcessor.setLoopPoints(ed->loopStartPoint, ed->loopEndPoint);
+            // Update parameter display
+            ed->paramDisplay7.setValue(value);
+            ed->paramDisplay7.setValueText(ed->loopEnabled ? "ON" : "OFF");
+            // Update waveform to show/hide loop markers
+            ed->updateWaveformVisualization();
+            // Update loop controls visibility/grey state
+            ed->updateLoopControlsState();
         } else {
             // Encoder 7: Sustain (0.0-1.0)
             ed->adsrSustain = value;
@@ -362,7 +456,11 @@ void EncoderSetupManager::setupEncoder7() {
     ed->encoder7.onButtonPressed = [ed]() {
         // Encoder 7 button pressed - reset to default
         if (ed->shiftToggleButton.getToggleState()) {
-            // Shift mode: Encoder 7 does nothing (for now)
+            // Shift mode: Loop default = OFF (value = 0.0)
+            ed->loopEnabled = false;
+            ed->audioProcessor.setLoopEnabled(false);
+            ed->encoder7.setValue(0.0f);
+            ed->encoder7.onValueChanged(0.0f);
         } else {
             // Set flag to prevent showing ADSR visualization during reset
             ed->isResettingADSR = true;
@@ -384,7 +482,14 @@ void EncoderSetupManager::setupEncoder8() {
     Op1CloneAudioProcessorEditor* ed = editor;
     ed->encoder8.onValueChanged = [ed](float value) {
         if (ed->shiftToggleButton.getToggleState()) {
-            // Shift mode: Encoder 8 does nothing (for now)
+            // Shift mode: Encoder 8 = Playback (Mono/Poly toggle)
+            // Value < 0.5 = Mono, >= 0.5 = Poly
+            bool isPoly = value >= 0.5f;
+            ed->isPolyphonic = isPoly;
+            ed->audioProcessor.setPlaybackMode(isPoly);
+            // Update parameter display
+            ed->paramDisplay8.setValue(value);
+            ed->paramDisplay8.setValueText(isPoly ? "Poly" : "Mono");
         } else {
             // Encoder 8: Release (0-20000ms = 0-20 seconds)
             ed->adsrReleaseMs = value * 20000.0f;
@@ -437,7 +542,11 @@ void EncoderSetupManager::setupEncoder8() {
     ed->encoder8.onButtonPressed = [ed]() {
         // Encoder 8 button pressed - reset to default
         if (ed->shiftToggleButton.getToggleState()) {
-            // Shift mode: Encoder 8 does nothing (for now)
+            // Shift mode: Playback default = Poly (value = 1.0)
+            ed->isPolyphonic = true;
+            ed->audioProcessor.setPlaybackMode(true);
+            ed->encoder8.setValue(1.0f);
+            ed->encoder8.onValueChanged(1.0f);
         } else {
             // Set flag to prevent showing ADSR visualization during reset
             ed->isResettingADSR = true;

@@ -14,6 +14,11 @@ WaveformComponent::WaveformComponent() {
     endPoint = 0;
     sampleGain = 1.0f;
     
+    // Initialize loop parameters
+    loopStartPoint = 0;
+    loopEndPoint = 0;
+    loopEnabled = false;
+    
     setOpaque(true);
 }
 
@@ -169,6 +174,55 @@ void WaveformComponent::drawWaveform(juce::Graphics& g, juce::Rectangle<int> bou
         // Draw filled waveform with anti-aliasing for smooth appearance
         g.fillPath(waveformPath);
     }
+    
+    // Draw loop markers (white vertical lines) if loop is enabled
+    if (loopEnabled && sampleData.size() > 0) {
+        g.setColour(juce::Colours::white);
+        
+        // Calculate positions for loop markers
+        int totalSamples = static_cast<int>(sampleData.size());
+        if (totalSamples > 0) {
+            // Calculate visible sample range
+            int visibleStart = std::max(0, startPoint);
+            int visibleEnd = std::min(totalSamples, endPoint);
+            int visibleLength = visibleEnd - visibleStart;
+            
+            if (visibleLength > 0) {
+                // Draw loop start marker
+                if (loopStartPoint >= visibleStart && loopStartPoint < visibleEnd) {
+                    float loopStartX = static_cast<float>(bounds.getX()) + 
+                        ((static_cast<float>(loopStartPoint - visibleStart) / static_cast<float>(visibleLength)) * static_cast<float>(width));
+                    g.drawVerticalLine(static_cast<int>(loopStartX), 
+                                     static_cast<float>(bounds.getY()), 
+                                     static_cast<float>(bounds.getBottom()));
+                }
+                
+                // Draw loop end marker
+                if (loopEndPoint > visibleStart && loopEndPoint <= visibleEnd) {
+                    float loopEndX = static_cast<float>(bounds.getX()) + 
+                        ((static_cast<float>(loopEndPoint - visibleStart) / static_cast<float>(visibleLength)) * static_cast<float>(width));
+                    g.drawVerticalLine(static_cast<int>(loopEndX), 
+                                     static_cast<float>(bounds.getY()), 
+                                     static_cast<float>(bounds.getBottom()));
+                }
+            }
+        }
+    }
+}
+
+void WaveformComponent::setLoopStartPoint(int sampleIndex) {
+    loopStartPoint = sampleIndex;
+    repaint();
+}
+
+void WaveformComponent::setLoopEndPoint(int sampleIndex) {
+    loopEndPoint = sampleIndex;
+    repaint();
+}
+
+void WaveformComponent::setLoopEnabled(bool enabled) {
+    loopEnabled = enabled;
+    repaint();
 }
 
 void WaveformComponent::resized() {

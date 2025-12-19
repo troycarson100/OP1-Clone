@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ITimePitch.h"
+#include "SampleData.h"
 #include <memory>
 
 namespace Core {
@@ -12,8 +13,12 @@ public:
     SamplerVoice();
     ~SamplerVoice();
     
-    // Set the sample data (called from wrapper after loading)
-    void setSample(const float* data, int length, double sourceSampleRate);
+    // DEPRECATED: setSample() removed - voices now capture sample on noteOn only
+    // This method is disabled to prevent raw pointer usage
+    // void setSample(const float* data, int length, double sourceSampleRate); // DELETED
+    
+    // Set sample data from shared_ptr (for noteOn snapshot)
+    void setSampleData(SampleDataPtr sampleData);
     
     // Set root note (MIDI note that plays at original pitch)
     void setRootNote(int rootNote) { rootMidiNote = rootNote; }
@@ -64,6 +69,10 @@ public:
     void setEndPoint(int sampleIndex) { endPoint = sampleIndex; } // End playback at this sample
     void setSampleGain(float gain) { sampleGain = clamp(gain, 0.0f, 2.0f); } // Sample gain (0.0 to 2.0)
     
+    // Loop parameters
+    void setLoopEnabled(bool enabled) { loopEnabled = enabled; }
+    void setLoopPoints(int start, int end) { loopStartPoint = start; loopEndPoint = end; }
+    
     // Get sample editing parameters
     float getRepitch() const { return repitchSemitones; }
     int getStartPoint() const { return startPoint; }
@@ -71,9 +80,9 @@ public:
     float getSampleGain() const { return sampleGain; }
     
 private:
-    const float* sampleData;
-    int sampleLength;
-    double sourceSampleRate;
+    // Sample data (immutable, shared ownership)
+    // Captured on noteOn, remains valid until voice releases it
+    SampleDataPtr sampleData_;
     
     double playhead;        // Current playback position (samples, can be fractional)
     bool active;
@@ -127,8 +136,13 @@ private:
     // Sample editing parameters
     float repitchSemitones;  // Pitch offset in semitones (default 0.0)
     int startPoint;          // Start playback from this sample (default 0)
-    int endPoint;            // End playback at this sample (default sampleLength)
+    int endPoint;            // End playback at this sample (default sampleData_->length)
     float sampleGain;        // Sample gain multiplier (default 1.0)
+    
+    // Loop parameters
+    bool loopEnabled;        // Loop on/off (default false)
+    int loopStartPoint;      // Loop start point (default 0)
+    int loopEndPoint;        // Loop end point (default 0)
     
     // Helper: clamp value
     static float clamp(float value, float min, float max);

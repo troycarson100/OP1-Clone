@@ -9,6 +9,8 @@ EditorEventHandlers::EditorEventHandlers(Op1CloneAudioProcessorEditor* editor)
 }
 
 bool EditorEventHandlers::handleKeyPressed(const juce::KeyPress& key) {
+    if (!editor) return false;  // Safety check
+    
     int note = keyToMidiNote(key.getKeyCode());
     if (note >= 0 && note < 128 && !editor->pressedKeys[note]) {
         editor->pressedKeys[note] = true;
@@ -19,6 +21,8 @@ bool EditorEventHandlers::handleKeyPressed(const juce::KeyPress& key) {
 }
 
 bool EditorEventHandlers::handleKeyStateChanged(bool /* isKeyDown */) {
+    if (!editor) return false;  // Safety check
+    
     // Check all mapped keyboard keys and send note off for released keys
     // Standard piano keyboard layout
     int keyCodes[] = {
@@ -48,9 +52,12 @@ void EditorEventHandlers::handleButtonClicked(juce::Button* button) {
         bool enabled = editor->warpToggleButton.getToggleState();
         editor->audioProcessor.setTimeWarpEnabled(enabled);
     } else if (button == &editor->shiftToggleButton) {
-        // Shift button toggled - show/hide ADSR label
+        // Shift button toggled - hide ADSR label when shift is on
         bool shiftEnabled = editor->shiftToggleButton.getToggleState();
-        editor->adsrLabel.setVisible(shiftEnabled);
+        editor->adsrLabel.setVisible(false);  // Always hide ADSR label (shift mode uses different parameters)
+        
+        // Update parameter display labels based on shift state
+        editor->updateParameterDisplayLabels();
         
         // BPM display is always visible, no need to toggle
         
@@ -70,27 +77,34 @@ void EditorEventHandlers::handleLoadSampleButtonClicked() {
     auto chooserFlags = juce::FileBrowserComponent::openMode | 
                         juce::FileBrowserComponent::canSelectFiles;
     
-    editor->fileChooser->launchAsync(chooserFlags, [this](const juce::FileChooser& fc) {
+    // CRITICAL: Capture editor pointer directly, not [this]
+    // EditorEventHandlers is a temporary object, so [this] would be a dangling pointer
+    // when the async callback executes. Capturing editor directly is safe as long as
+    // the PluginEditor still exists.
+    Op1CloneAudioProcessorEditor* ed = editor;
+    editor->fileChooser->launchAsync(chooserFlags, [ed](const juce::FileChooser& fc) {
         auto selectedFile = fc.getResult();
         
-        if (selectedFile.existsAsFile()) {
-            if (editor->audioProcessor.loadSampleFromFile(selectedFile)) {
+        if (selectedFile.existsAsFile() && ed != nullptr) {
+            if (ed->audioProcessor.loadSampleFromFile(selectedFile)) {
                 // Update UI
-                editor->currentSampleName = selectedFile.getFileName();
-                editor->sampleNameLabel.setText(editor->currentSampleName, juce::dontSendNotification);
+                ed->currentSampleName = selectedFile.getFileName();
+                ed->sampleNameLabel.setText(ed->currentSampleName, juce::dontSendNotification);
                 
                 // Update waveform visualization
-                editor->updateWaveform();
+                ed->updateWaveform();
                 
-                editor->repaint();
+                ed->repaint();
             } else {
                 // Error loading - could show a message box or just continue
-                editor->repaint();
+                ed->repaint();
             }
         }
         
         // Clear file chooser after use
-        editor->fileChooser.reset();
+        if (ed != nullptr) {
+            ed->fileChooser.reset();
+        }
     });
 }
 
@@ -134,6 +148,8 @@ int EditorEventHandlers::keyToMidiNote(int keyCode) const {
 
 void EditorEventHandlers::sendMidiNote(int note, float velocity, bool noteOn) {
     // Send MIDI message through processor
-    editor->audioProcessor.sendMidiNote(note, velocity, noteOn);
+    if (editor) {
+        editor->audioProcessor.sendMidiNote(note, velocity, noteOn);
+    }
 }
 

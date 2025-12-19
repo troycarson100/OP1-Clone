@@ -4,6 +4,8 @@
 #include <juce_audio_utils/juce_audio_utils.h>
 #include <juce_audio_devices/juce_audio_devices.h>
 #include <cmath>
+#include <fstream>
+#include <chrono>
 
 // For now, we'll generate a simple test tone as the default sample
 // In a real implementation, you'd load a WAV file from BinaryData
@@ -211,6 +213,15 @@ float Op1CloneAudioProcessor::getSampleGain() const {
 }
 
 bool Op1CloneAudioProcessor::loadSampleFromFile(const juce::File& file) {
+    // #region agent log
+    {
+        std::ofstream log("/Users/troycarson/Documents/JUCE Projects/OP1-Clone/.cursor/debug.log", std::ios::app);
+        if (log.is_open()) {
+            log << "{\"sessionId\":\"debug-session\",\"runId\":\"run1\",\"hypothesisId\":\"H1\",\"location\":\"PluginProcessor.cpp:213\",\"message\":\"loadSampleFromFile entry\",\"data\":{\"fileExists\":" << (file.existsAsFile() ? 1 : 0) << ",\"fileName\":\"" << file.getFileName().toStdString() << "\"},\"timestamp\":" << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() << "}\n";
+        }
+    }
+    // #endregion
+    
     if (!file.existsAsFile()) {
         return false;
     }
@@ -220,6 +231,16 @@ bool Op1CloneAudioProcessor::loadSampleFromFile(const juce::File& file) {
     formatManager.registerBasicFormats();
     
     std::unique_ptr<juce::AudioFormatReader> reader(formatManager.createReaderFor(file));
+    
+    // #region agent log
+    {
+        std::ofstream log("/Users/troycarson/Documents/JUCE Projects/OP1-Clone/.cursor/debug.log", std::ios::app);
+        if (log.is_open()) {
+            log << "{\"sessionId\":\"debug-session\",\"runId\":\"run1\",\"hypothesisId\":\"H1\",\"location\":\"PluginProcessor.cpp:223\",\"message\":\"reader created\",\"data\":{\"readerNull\":" << (reader == nullptr ? 1 : 0) << "},\"timestamp\":" << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() << "}\n";
+        }
+    }
+    // #endregion
+    
     if (reader == nullptr) {
         return false;
     }
@@ -228,13 +249,51 @@ bool Op1CloneAudioProcessor::loadSampleFromFile(const juce::File& file) {
     juce::AudioBuffer<float> sampleBuffer(static_cast<int>(reader->numChannels), 
                                           static_cast<int>(reader->lengthInSamples));
     
+    // #region agent log
+    {
+        std::ofstream log("/Users/troycarson/Documents/JUCE Projects/OP1-Clone/.cursor/debug.log", std::ios::app);
+        if (log.is_open()) {
+            log << "{\"sessionId\":\"debug-session\",\"runId\":\"run1\",\"hypothesisId\":\"H1\",\"location\":\"PluginProcessor.cpp:230\",\"message\":\"buffer created\",\"data\":{\"numChannels\":" << static_cast<int>(reader->numChannels) << ",\"numSamples\":" << static_cast<int>(reader->lengthInSamples) << "},\"timestamp\":" << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() << "}\n";
+        }
+    }
+    // #endregion
+    
     // Read the file into the buffer
-    if (!reader->read(&sampleBuffer, 0, static_cast<int>(reader->lengthInSamples), 0, true, true)) {
+    bool readSuccess = reader->read(&sampleBuffer, 0, static_cast<int>(reader->lengthInSamples), 0, true, true);
+    
+    // #region agent log
+    {
+        std::ofstream log("/Users/troycarson/Documents/JUCE Projects/OP1-Clone/.cursor/debug.log", std::ios::app);
+        if (log.is_open()) {
+            log << "{\"sessionId\":\"debug-session\",\"runId\":\"run1\",\"hypothesisId\":\"H1\",\"location\":\"PluginProcessor.cpp:232\",\"message\":\"file read\",\"data\":{\"readSuccess\":" << (readSuccess ? 1 : 0) << "},\"timestamp\":" << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() << "}\n";
+        }
+    }
+    // #endregion
+    
+    if (!readSuccess) {
         return false;
     }
     
+    // #region agent log
+    {
+        std::ofstream log("/Users/troycarson/Documents/JUCE Projects/OP1-Clone/.cursor/debug.log", std::ios::app);
+        if (log.is_open()) {
+            log << "{\"sessionId\":\"debug-session\",\"runId\":\"run1\",\"hypothesisId\":\"H1\",\"location\":\"PluginProcessor.cpp:237\",\"message\":\"calling adapter.setSample\",\"data\":{\"sampleRate\":" << reader->sampleRate << "},\"timestamp\":" << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() << "}\n";
+        }
+    }
+    // #endregion
+    
     // Pass to adapter (will extract mono from first channel)
     adapter.setSample(sampleBuffer, reader->sampleRate);
+    
+    // #region agent log
+    {
+        std::ofstream log("/Users/troycarson/Documents/JUCE Projects/OP1-Clone/.cursor/debug.log", std::ios::app);
+        if (log.is_open()) {
+            log << "{\"sessionId\":\"debug-session\",\"runId\":\"run1\",\"hypothesisId\":\"H1\",\"location\":\"PluginProcessor.cpp:240\",\"message\":\"loadSampleFromFile exit\",\"data\":{},\"timestamp\":" << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() << "}\n";
+        }
+    }
+    // #endregion
     
     return true;
 }
@@ -245,6 +304,46 @@ void Op1CloneAudioProcessor::getSampleDataForVisualization(std::vector<float>& o
 
 double Op1CloneAudioProcessor::getSourceSampleRate() const {
     return adapter.getSourceSampleRate();
+}
+
+void Op1CloneAudioProcessor::setLPFilterCutoff(float cutoffHz) {
+    adapter.setLPFilterCutoff(cutoffHz);
+}
+
+void Op1CloneAudioProcessor::setLPFilterResonance(float resonance) {
+    adapter.setLPFilterResonance(resonance);
+}
+
+void Op1CloneAudioProcessor::setLPFilterEnvAmount(float amount) {
+    adapter.setLPFilterEnvAmount(amount);
+}
+
+void Op1CloneAudioProcessor::setLPFilterDrive(float driveDb) {
+    adapter.setLPFilterDrive(driveDb);
+}
+
+void Op1CloneAudioProcessor::setLofiAmount(float amount) {
+    adapter.setLofiAmount(amount);
+}
+
+void Op1CloneAudioProcessor::setPlaybackMode(bool polyphonic) {
+    adapter.setPlaybackMode(polyphonic);
+}
+
+void Op1CloneAudioProcessor::setLoopEnabled(bool enabled) {
+    adapter.setLoopEnabled(enabled);
+}
+
+void Op1CloneAudioProcessor::setLoopPoints(int startPoint, int endPoint) {
+    adapter.setLoopPoints(startPoint, endPoint);
+}
+
+void Op1CloneAudioProcessor::setLoopEnvAttack(float attackMs) {
+    adapter.setLoopEnvAttack(attackMs);
+}
+
+void Op1CloneAudioProcessor::setLoopEnvRelease(float releaseMs) {
+    adapter.setLoopEnvRelease(releaseMs);
 }
 
 void Op1CloneAudioProcessor::triggerTestNote() {
