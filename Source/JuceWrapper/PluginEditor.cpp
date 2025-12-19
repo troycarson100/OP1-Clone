@@ -75,7 +75,7 @@ Op1CloneAudioProcessorEditor::Op1CloneAudioProcessorEditor(Op1CloneAudioProcesso
     lpResonance = 1.0f;
     lpEnvAmount = 0.0f;  // DEPRECATED - kept for future use
     lpDriveDb = 0.0f;
-    lofiAmount = 0.0f;
+    timeWarpSpeed = 1.0f;  // Default to normal speed (1.0x)
     isPolyphonic = true;
     loopStartPoint = 0;
     loopEndPoint = 0;

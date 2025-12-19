@@ -26,6 +26,9 @@ public:
     // Enable or disable time-warp processing on all voices
     void setWarpEnabled(bool enabled);
     
+    // Set time-warp playback speed for all voices (only affects time-warped samples)
+    void setTimeWarpSpeed(float speed);  // 0.5x to 2.0x (1.0x = normal speed)
+    
     // Handle note on - allocates a voice
     void noteOn(int note, float velocity);
     

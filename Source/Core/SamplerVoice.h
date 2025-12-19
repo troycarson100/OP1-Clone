@@ -56,6 +56,9 @@ public:
     // Enable or disable time-warp processing
     void setWarpEnabled(bool enabled) { warpEnabled = enabled; }
     
+    // Set time-warp playback speed (only affects time-warped samples)
+    void setTimeWarpSpeed(float speed) { timeWarpSpeed = speed; }
+    
     // DEBUG: Enable sine test mode (outputs 220Hz sine instead of sample data)
     void setSineTestEnabled(bool enabled) { sineTestEnabled = enabled; }
     
@@ -143,6 +146,7 @@ private:
     
     // Enable/disable time-warp processing (when false, use simple pitch path)
     bool warpEnabled;
+    float timeWarpSpeed;  // Playback speed for time-warp (0.5x to 2.0x, 1.0x = normal)
     
     // DEBUG: Sine test mode (outputs 220Hz sine instead of sample data)
     bool sineTestEnabled;

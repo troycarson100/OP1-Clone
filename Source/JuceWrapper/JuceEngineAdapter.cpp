@@ -270,8 +270,8 @@ void JuceEngineAdapter::setLPFilterDrive(float driveDb) {
     engine.setLPFilterDrive(driveDb);
 }
 
-void JuceEngineAdapter::setLofiAmount(float amount) {
-    engine.setLofiAmount(amount);
+void JuceEngineAdapter::setTimeWarpSpeed(float speed) {
+    engine.setTimeWarpSpeed(speed);
 }
 
 void JuceEngineAdapter::setPlaybackMode(bool polyphonic) {

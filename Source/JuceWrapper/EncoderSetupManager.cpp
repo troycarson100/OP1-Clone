@@ -169,13 +169,14 @@ void EncoderSetupManager::setupEncoder4() {
     Op1CloneAudioProcessorEditor* ed = editor;
     ed->encoder4.onValueChanged = [ed](float value) {
         if (ed->shiftToggleButton.getToggleState()) {
-            // Shift mode: Encoder 4 = Lofi (0.0 to 1.0)
-            ed->lofiAmount = value;
-            ed->audioProcessor.setLofiAmount(ed->lofiAmount);
-            // Update parameter display 4 (Lofi)
+            // Shift mode: Encoder 4 = Speed (0.5x to 2.0x, where 1.0x = normal speed)
+            // Map value (0.0-1.0) to speed (0.5x-2.0x)
+            // value = 0.0 -> 0.5x, value = 0.5 -> 1.0x, value = 1.0 -> 2.0x
+            ed->timeWarpSpeed = 0.5f + (value * 1.5f);
+            ed->audioProcessor.setTimeWarpSpeed(ed->timeWarpSpeed);
+            // Update parameter display 4 (Speed)
             ed->paramDisplay4.setValue(value);
-            int lofiPercent = static_cast<int>(ed->lofiAmount * 100.0f);
-            ed->paramDisplay4.setValueText(juce::String(lofiPercent) + "%");
+            ed->paramDisplay4.setValueText(juce::String(ed->timeWarpSpeed, 2) + "x");
         } else {
             // Encoder 4: Sample gain (0.0 to 2.0)
             ed->sampleGain = value * 2.0f;
@@ -190,11 +191,11 @@ void EncoderSetupManager::setupEncoder4() {
     ed->encoder4.onButtonPressed = [ed]() {
         // Encoder 4 button pressed - reset to default
         if (ed->shiftToggleButton.getToggleState()) {
-            // Shift mode: Lofi default = 0.0 (value = 0.0)
-            ed->lofiAmount = 0.0f;
-            ed->audioProcessor.setLofiAmount(ed->lofiAmount);
-            ed->encoder4.setValue(0.0f);
-            ed->encoder4.onValueChanged(0.0f);
+            // Shift mode: Speed default = 1.0x (value = 0.5, which maps to 1.0x)
+            ed->timeWarpSpeed = 1.0f;
+            ed->audioProcessor.setTimeWarpSpeed(ed->timeWarpSpeed);
+            ed->encoder4.setValue(0.5f);  // 0.5 maps to 1.0x speed
+            ed->encoder4.onValueChanged(0.5f);
         } else {
             // Normal mode: Sample gain default = 1.0x (value = 0.5)
             ed->encoder4.setValue(0.5f);

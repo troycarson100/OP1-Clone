@@ -35,6 +35,12 @@ void VoiceManager::setWarpEnabled(bool enabled) {
     }
 }
 
+void VoiceManager::setTimeWarpSpeed(float speed) {
+    for (auto& voice : voices) {
+        voice.setTimeWarpSpeed(speed);
+    }
+}
+
 int VoiceManager::allocateVoice() {
     // First, try to find a free voice (not active)
     // Search through all voices to find an inactive one
@@ -101,12 +107,13 @@ bool VoiceManager::noteOn(int note, float velocity, SampleDataPtr sampleData, bo
         }
     }
     
-    // CRITICAL: Check if there's already a voice playing this exact note
-    // If so, retrigger that voice smoothly instead of allocating a new one
-    // This prevents glitchy sounds from rapid retriggering
+    // CRITICAL: Check if there's already a voice that was playing this exact note
+    // If so, retrigger that voice (restart from beginning) instead of allocating a new one
+    // This provides true retrigger behavior for rapid key presses
+    // Check both active voices and voices in release phase (recently played this note)
     for (int i = 0; i < MAX_VOICES; ++i) {
-        if (voices[i].isPlaying() && voices[i].getCurrentNote() == note) {
-            // Found a voice playing this note - retrigger it smoothly
+        if (voices[i].getCurrentNote() == note) {
+            // Found a voice that was playing this note (active or in release) - retrigger it
             voices[i].setSampleData(sampleData);
             voices[i].noteOn(note, velocity, startDelayOffset);
             wasStolen = false; // Not stolen, just retriggered

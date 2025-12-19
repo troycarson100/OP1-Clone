@@ -87,8 +87,8 @@ public:
     void setLoopEnvAttack(float attackMs);
     void setLoopEnvRelease(float releaseMs);
     
-    // Set lofi effect parameters
-    void setLofiAmount(float amount);  // 0.0 to 1.0 (0 = no lofi, 1 = maximum lofi)
+    // Set time-warp playback speed (only affects time-warped samples)
+    void setTimeWarpSpeed(float speed);  // 0.5x to 2.0x (1.0x = normal speed)
     
     // Set playback mode (mono or poly)
     void setPlaybackMode(bool polyphonic);  // true = poly, false = mono
@@ -139,8 +139,8 @@ private:
     float loopEnvAttackMs;
     float loopEnvReleaseMs;
     
-    // Lofi effect parameter
-    float lofiAmount;  // 0.0 to 1.0
+    // Time-warp playback speed
+    float timeWarpSpeed;  // 0.5x to 2.0x (1.0x = normal speed)
     
     // Playback mode
     bool isPolyphonic;  // true = poly, false = mono

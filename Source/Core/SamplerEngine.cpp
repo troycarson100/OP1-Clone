@@ -20,7 +20,7 @@ SamplerEngine::SamplerEngine()
     , filterDriveDb(0.0f)
     , loopEnvAttackMs(10.0f)
     , loopEnvReleaseMs(100.0f)
-    , lofiAmount(0.0f)
+    , timeWarpSpeed(1.0f)  // Default to normal speed (1.0x)
     , isPolyphonic(true)
     , filterEffectsEnabled(true)  // Enabled by default
     , tempBuffer(nullptr)
@@ -47,7 +47,7 @@ void SamplerEngine::prepare(double sampleRate, int blockSize, int numChannels) {
     // Prepare filter and effects
     filter.prepare(sampleRate);
     modEnv.prepare(sampleRate);  // DEPRECATED - kept for future use
-    lofi.prepare(sampleRate);
+    // lofi.prepare(sampleRate);  // DEPRECATED - lofi removed, replaced with speed knob
     
     // Set filter parameters (now that it's prepared)
     // Initialize filter to fully open (20kHz) so it doesn't cut signal
@@ -62,8 +62,8 @@ void SamplerEngine::prepare(double sampleRate, int blockSize, int numChannels) {
     float driveGain = 1.0f + (filterDriveDb / 24.0f) * 3.0f; // 1.0 to 4.0
     drive.setDrive(driveGain);
     
-    // Set lofi
-    updateLofiParameters();
+    // Set time-warp speed (default 1.0x = normal speed)
+    voiceManager.setTimeWarpSpeed(timeWarpSpeed);
     
     // Allocate temporary buffer for processing (max block size)
     delete[] tempBuffer;
@@ -347,10 +347,8 @@ void SamplerEngine::process(float** output, int numChannels, int numSamples) {
             }
         }
         
-        // 3. Apply lofi effect (after filter, before copying to other channels)
-        if (lofiAmount > 0.001f) {
-            lofi.processBlock(channelData, channelData, numSamples);
-        }
+        // 3. Lofi effect removed - replaced with speed knob
+        // (lofi processing code kept commented for potential future use)
         
         // Copy processed signal to other channels (mono to stereo)
         for (int ch = 1; ch < numChannels; ++ch) {
@@ -460,11 +458,9 @@ void SamplerEngine::setLPFilterDrive(float driveDb) {
     }
 }
 
-void SamplerEngine::setLofiAmount(float amount) {
-    lofiAmount = std::max(0.0f, std::min(1.0f, amount));
-    if (currentSampleRate > 0.0) {
-        updateLofiParameters();
-    }
+void SamplerEngine::setTimeWarpSpeed(float speed) {
+    timeWarpSpeed = std::max(0.5f, std::min(2.0f, speed));
+    voiceManager.setTimeWarpSpeed(timeWarpSpeed);
 }
 
 void SamplerEngine::setPlaybackMode(bool polyphonic) {
@@ -488,11 +484,11 @@ void SamplerEngine::updateLofiParameters() {
     // Map lofiAmount (0-1) to bit depth (16 bits to 1 bit) and sample rate reduction (1.0 to 0.1)
     // At 0.0: 16 bits, 1.0 sample rate (no lofi)
     // At 1.0: 1 bit, 0.1 sample rate (maximum lofi)
-    float bitDepth = 16.0f - (lofiAmount * 15.0f);  // 16 to 1 bits
-    float sampleRateReduction = 1.0f - (lofiAmount * 0.9f);  // 1.0 to 0.1
-    
-    lofi.setBitDepth(bitDepth);
-    lofi.setSampleRateReduction(sampleRateReduction);
+    // DEPRECATED: Lofi effect removed - replaced with speed knob
+    // float bitDepth = 16.0f - (lofiAmount * 15.0f);  // 16 to 1 bits
+    // float sampleRateReduction = 1.0f - (lofiAmount * 0.9f);  // 1.0 to 0.1
+    // lofi.setBitDepth(bitDepth);
+    // lofi.setSampleRateReduction(sampleRateReduction);
 }
 
 void SamplerEngine::setLoopEnvAttack(float attackMs) {

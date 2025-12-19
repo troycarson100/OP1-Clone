@@ -38,6 +38,7 @@ SamplerVoice::SamplerVoice()
     , bufferSize(0)
     , sampleReadPos(0.0)
     , warpEnabled(true)
+    , timeWarpSpeed(1.0f)  // Default to normal speed (1.0x)
     , sineTestEnabled(false)
     , sinePhase(0.0)
     , primeRemainingSamples(0)
@@ -124,13 +125,10 @@ void SamplerVoice::noteOn(int note, float velocity, int startDelayOffset) {
     bool wasActive = active;
     bool wasSameNote = (wasActive && currentNote == note);
     
-    // CRITICAL: Only reset playhead if it's a new voice or different note
-    // If retriggering the same note, keep the playhead position to avoid sample discontinuity
-    if (!wasActive || !wasSameNote) {
-        playhead = static_cast<double>(startPoint); // Start from start point
-        sampleReadPos = static_cast<double>(startPoint); // Start from start point
-    }
-    // If wasSameNote, keep current playhead/sampleReadPos to maintain sample continuity
+    // ALWAYS reset playhead to start point for true retrigger behavior
+    // This ensures rapid key presses restart the sample from the beginning
+    playhead = static_cast<double>(startPoint); // Always start from start point
+    sampleReadPos = static_cast<double>(startPoint); // Always start from start point
     
     active = (sampleData_ != nullptr && sampleData_->length > 0 && !sampleData_->mono.empty());
     
@@ -160,9 +158,9 @@ void SamplerVoice::noteOn(int note, float velocity, int startDelayOffset) {
         float totalSemitones = static_cast<float>(semitones) + repitchSemitones;
         
         timePitchProcessor->setPitchSemitones(totalSemitones);
-        // For constant duration: use timeRatio = 1.0 (pitch-only)
-        // Reading sample at 1x speed + pitch shift = constant duration automatically
-        timePitchProcessor->setTimeRatio(1.0f);
+        // Use timeWarpSpeed to control playback speed (0.5x to 2.0x)
+        // 1.0x = normal speed, < 1.0x = slower, > 1.0x = faster
+        timePitchProcessor->setTimeRatio(timeWarpSpeed);
         
         // Only reset/prime when voice transitions from inactive to active (new voice start)
         // Do NOT reset on every note press - this clears analysis history
@@ -183,29 +181,15 @@ void SamplerVoice::noteOn(int note, float velocity, int startDelayOffset) {
         // If wasActive, just update pitch - no reset, no re-priming
     }
     
-    // Reset ADSR envelope - start from 0.0 for smooth attack
-    // CRITICAL: When retriggering same note, don't reset envelope - restart attack from current value
-    if (!wasActive || !wasSameNote) {
-        // New voice or different note - start from 0.0
-        envelopeValue = 0.0f;
-        retriggerOldEnvelope = 0.0f; // No old envelope for new voice
-        attackCounter = 0;
-        decayCounter = 0;
-        inRelease = false;
-        releaseCounter = 0;
-        releaseStartValue = 0.0f;
-    } else {
-        // Retriggering same note - restart attack from current envelope value
-        // Store current value as attack start point
-        retriggerOldEnvelope = envelopeValue; // Store current value to use as attack start
-        // Keep envelopeValue at current value - attack will ramp up from here
-        attackCounter = 0;
-        decayCounter = 0;
-        inRelease = false;
-        releaseCounter = 0;
-        releaseStartValue = 0.0f;
-        // envelopeValue stays at current value - attack will ramp from current to 1.0
-    }
+    // Reset ADSR envelope - always start from 0.0 for true retrigger behavior
+    // This ensures rapid key presses always restart the envelope from the beginning
+    envelopeValue = 0.0f;
+    retriggerOldEnvelope = 0.0f; // No old envelope for retrigger
+    attackCounter = 0;
+    decayCounter = 0;
+    inRelease = false;
+    releaseCounter = 0;
+    releaseStartValue = 0.0f;
     
     // Reset debug counters
     oobGuardHits.store(0, std::memory_order_relaxed);
@@ -227,7 +211,7 @@ void SamplerVoice::noteOn(int note, float velocity, int startDelayOffset) {
     fadeOutCounter = 0;
     // CRITICAL: When retriggering same note, don't fade-in (playhead isn't reset, so no discontinuity)
     // Only fade-in for new voices or different notes
-    isFadingIn = (!wasActive || !wasSameNote);  // Start fade-in only for new/different notes
+    isFadingIn = true;  // Always start fade-in for true retrigger behavior
     isFadingOut = false;
     
     // Calculate fade durations - longer for smoother transitions, especially on retrigger
@@ -634,12 +618,10 @@ void SamplerVoice::process(float** output, int numChannels, int numSamples, doub
             } else {
                 // ADSR envelope phases - all with smooth cosine curves for click-free transitions
                 if (attackCounter < attackSamples) {
-                        // Attack phase: ramp from current value (or 0.0) to 1.0 with smooth cosine curve
-                        // When retriggering same note, start from retriggerOldEnvelope
+                        // Attack phase: always ramp from 0.0 to 1.0 with smooth cosine curve (true retrigger)
                         float attackProgress = static_cast<float>(attackCounter) / static_cast<float>(attackSamples);
                         float attackCurve = 0.5f * (1.0f - std::cos(attackProgress * 3.14159265f)); // 0.0 to 1.0
-                        float attackStart = (retriggerOldEnvelope > 0.0f) ? retriggerOldEnvelope : 0.0f;
-                        envelopeValue = attackStart + (1.0f - attackStart) * attackCurve; // Smooth ramp from start to 1.0
+                        envelopeValue = attackCurve; // Ramp from 0.0 to 1.0
                         attackCounter++;
                 } else if (decayCounter < decaySamples) {
                     // Decay phase: 1.0 to sustain level with smooth cosine curve
@@ -1002,12 +984,10 @@ void SamplerVoice::process(float** output, int numChannels, int numSamples, doub
             } else {
                 // ADSR envelope phases - all with smooth cosine curves for click-free transitions
                 if (attackCounter < attackSamples) {
-                        // Attack phase: ramp from current value (or 0.0) to 1.0 with smooth cosine curve
-                        // When retriggering same note, start from retriggerOldEnvelope
+                        // Attack phase: always ramp from 0.0 to 1.0 with smooth cosine curve (true retrigger)
                         float attackProgress = static_cast<float>(attackCounter) / static_cast<float>(attackSamples);
                         float attackCurve = 0.5f * (1.0f - std::cos(attackProgress * 3.14159265f)); // 0.0 to 1.0
-                        float attackStart = (retriggerOldEnvelope > 0.0f) ? retriggerOldEnvelope : 0.0f;
-                        envelopeValue = attackStart + (1.0f - attackStart) * attackCurve; // Smooth ramp from start to 1.0
+                        envelopeValue = attackCurve; // Ramp from 0.0 to 1.0
                         attackCounter++;
                 } else if (decayCounter < decaySamples) {
                     // Decay phase: 1.0 to sustain level with smooth cosine curve
@@ -1075,7 +1055,7 @@ void SamplerVoice::process(float** output, int numChannels, int numSamples, doub
                 } else {
                     isFadingIn = false;
                     fadeGain = 1.0f; // Full gain after fade-in completes
-                    retriggerOldEnvelope = 0.0f; // Clear old envelope after fade-in completes
+                    // retriggerOldEnvelope no longer used - removed for true retrigger behavior
                 }
                 
                 // Fade-out on note release (smooth exponential curve - very smooth)

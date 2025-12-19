@@ -176,7 +176,7 @@ private:
     float lpResonance;     // Low-pass filter resonance (0.1-10.0)
     float lpEnvAmount;     // Envelope amount (-1.0 to 1.0, positive/negative) - DEPRECATED, kept for future use
     float lpDriveDb;       // Drive amount in dB (0.0-24.0 dB)
-    float lofiAmount;       // Lofi effect amount (0.0-1.0)
+    float timeWarpSpeed;    // Time-warp playback speed (0.5x to 2.0x, where 1.0x = normal speed)
     bool isPolyphonic;      // Playback mode (true = poly, false = mono)
     int loopStartPoint;    // Loop start point (sample index)
     int loopEndPoint;      // Loop end point (sample index)

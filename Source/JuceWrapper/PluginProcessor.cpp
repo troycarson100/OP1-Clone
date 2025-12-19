@@ -330,8 +330,8 @@ void Op1CloneAudioProcessor::setLPFilterDrive(float driveDb) {
     adapter.setLPFilterDrive(driveDb);
 }
 
-void Op1CloneAudioProcessor::setLofiAmount(float amount) {
-    adapter.setLofiAmount(amount);
+void Op1CloneAudioProcessor::setTimeWarpSpeed(float speed) {
+    adapter.setTimeWarpSpeed(speed);
 }
 
 void Op1CloneAudioProcessor::setPlaybackMode(bool polyphonic) {

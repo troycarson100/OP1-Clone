@@ -204,7 +204,7 @@ void EditorUpdateMethods::updateParameterDisplayLabels() {
         editor->paramDisplay1.setLabel("CUTOFF");
         editor->paramDisplay2.setLabel("RES.");
         editor->paramDisplay3.setLabel("DRIVE");
-        editor->paramDisplay4.setLabel("LOFI");
+        editor->paramDisplay4.setLabel("SPEED");
         editor->paramDisplay5.setLabel("L.START");
         editor->paramDisplay6.setLabel("L.END");
         editor->paramDisplay7.setLabel("LOOP");
