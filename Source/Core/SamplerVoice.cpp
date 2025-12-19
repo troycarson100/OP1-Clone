@@ -120,10 +120,18 @@ void SamplerVoice::noteOn(int note, float velocity, int startDelayOffset) {
     
     currentNote = note;
     currentVelocity = clamp(velocity, 0.0f, 1.0f);
-    playhead = static_cast<double>(startPoint); // Start from start point
-    sampleReadPos = static_cast<double>(startPoint); // Start from start point
     
     bool wasActive = active;
+    bool wasSameNote = (wasActive && currentNote == note);
+    
+    // CRITICAL: Only reset playhead if it's a new voice or different note
+    // If retriggering the same note, keep the playhead position to avoid sample discontinuity
+    if (!wasActive || !wasSameNote) {
+        playhead = static_cast<double>(startPoint); // Start from start point
+        sampleReadPos = static_cast<double>(startPoint); // Start from start point
+    }
+    // If wasSameNote, keep current playhead/sampleReadPos to maintain sample continuity
+    
     active = (sampleData_ != nullptr && sampleData_->length > 0 && !sampleData_->mono.empty());
     
     // Start ramp gain: 0 -> 1 over 64 samples (very short for rapid triggers)
@@ -176,21 +184,28 @@ void SamplerVoice::noteOn(int note, float velocity, int startDelayOffset) {
     }
     
     // Reset ADSR envelope - start from 0.0 for smooth attack
-    // CRITICAL: If retriggering an active voice, store old envelope for crossfade
-    if (!wasActive) {
-        // New voice - start from 0.0
+    // CRITICAL: When retriggering same note, don't reset envelope - restart attack from current value
+    if (!wasActive || !wasSameNote) {
+        // New voice or different note - start from 0.0
         envelopeValue = 0.0f;
         retriggerOldEnvelope = 0.0f; // No old envelope for new voice
+        attackCounter = 0;
+        decayCounter = 0;
+        inRelease = false;
+        releaseCounter = 0;
+        releaseStartValue = 0.0f;
     } else {
-        // Retriggering - store current envelope value for crossfade
-        retriggerOldEnvelope = envelopeValue;
-        envelopeValue = 0.0f; // Start new attack from 0.0
+        // Retriggering same note - restart attack from current envelope value
+        // Store current value as attack start point
+        retriggerOldEnvelope = envelopeValue; // Store current value to use as attack start
+        // Keep envelopeValue at current value - attack will ramp up from here
+        attackCounter = 0;
+        decayCounter = 0;
+        inRelease = false;
+        releaseCounter = 0;
+        releaseStartValue = 0.0f;
+        // envelopeValue stays at current value - attack will ramp from current to 1.0
     }
-    attackCounter = 0;
-    decayCounter = 0;
-    inRelease = false;
-    releaseCounter = 0;
-    releaseStartValue = 0.0f; // Initialize release start value
     
     // Reset debug counters
     oobGuardHits.store(0, std::memory_order_relaxed);
@@ -210,11 +225,13 @@ void SamplerVoice::noteOn(int note, float velocity, int startDelayOffset) {
     // Reset micro fade state - CRITICAL for smooth retriggering
     fadeInCounter = 0;
     fadeOutCounter = 0;
-    isFadingIn = true;  // Start fade-in
+    // CRITICAL: When retriggering same note, don't fade-in (playhead isn't reset, so no discontinuity)
+    // Only fade-in for new voices or different notes
+    isFadingIn = (!wasActive || !wasSameNote);  // Start fade-in only for new/different notes
     isFadingOut = false;
     
-    // Calculate fade durations - slightly longer for smoother transitions
-    fadeInSamples = 64;  // ~1.45ms at 44.1kHz - smooth ramp-in for rapid triggers
+    // Calculate fade durations - longer for smoother transitions, especially on retrigger
+    fadeInSamples = 128;  // ~2.9ms at 44.1kHz - longer ramp-in to prevent clicks on rapid triggers
     fadeOutSamples = 4096; // ~92.9ms at 44.1kHz - longer for smoother release
     
     // Set start delay for staggering voice starts within audio block
@@ -421,6 +438,14 @@ void SamplerVoice::process(float** output, int numChannels, int numSamples, doub
         // Fill input buffer: during priming, read forward from startPoint
         // After priming, continue from sampleReadPos (which we'll advance after priming)
         for (int i = 0; i < numSamples; ++i) {
+            // Check if voice should start outputting (staggered start)
+            if (startDelayCounter < startDelaySamples) {
+                startDelayCounter++;
+                // Skip processing for this sample during delay period
+                // We'll output silence by not adding to output buffer
+                continue;
+            }
+            
             // Calculate the read position
             double readPos;
             if (i < samplesToPrime) {
@@ -578,6 +603,18 @@ void SamplerVoice::process(float** output, int numChannels, int numSamples, doub
         // Use processedSamples to avoid processing zeros that weren't produced yet
         int samplesToProcess = std::max(processedSamples, 0);
         for (int i = 0; i < numSamples; ++i) {
+            // Check if voice should start outputting (staggered start)
+            if (startDelayCounter < startDelaySamples) {
+                startDelayCounter++;
+                // Output silence during delay period
+                for (int ch = 0; ch < numChannels; ++ch) {
+                    if (output[ch] != nullptr) {
+                        output[ch][i] += 0.0f;
+                    }
+                }
+                continue; // Skip processing for this sample
+            }
+            
             // Envelope
             if (inRelease) {
                 if (releaseCounter < releaseSamples) {
@@ -597,10 +634,13 @@ void SamplerVoice::process(float** output, int numChannels, int numSamples, doub
             } else {
                 // ADSR envelope phases - all with smooth cosine curves for click-free transitions
                 if (attackCounter < attackSamples) {
-                    // Attack phase: 0 to 1.0 with smooth cosine curve
-                    float attackProgress = static_cast<float>(attackCounter) / static_cast<float>(attackSamples);
-                    envelopeValue = 0.5f * (1.0f - std::cos(attackProgress * 3.14159265f)); // Smooth cosine curve
-                    attackCounter++;
+                        // Attack phase: ramp from current value (or 0.0) to 1.0 with smooth cosine curve
+                        // When retriggering same note, start from retriggerOldEnvelope
+                        float attackProgress = static_cast<float>(attackCounter) / static_cast<float>(attackSamples);
+                        float attackCurve = 0.5f * (1.0f - std::cos(attackProgress * 3.14159265f)); // 0.0 to 1.0
+                        float attackStart = (retriggerOldEnvelope > 0.0f) ? retriggerOldEnvelope : 0.0f;
+                        envelopeValue = attackStart + (1.0f - attackStart) * attackCurve; // Smooth ramp from start to 1.0
+                        attackCounter++;
                 } else if (decayCounter < decaySamples) {
                     // Decay phase: 1.0 to sustain level with smooth cosine curve
                     float decayProgress = static_cast<float>(decayCounter) / static_cast<float>(decaySamples);
@@ -777,6 +817,18 @@ void SamplerVoice::process(float** output, int numChannels, int numSamples, doub
         }
         
         for (int i = 0; i < numSamples; ++i) {
+            // Check if voice should start outputting (staggered start)
+            if (startDelayCounter < startDelaySamples) {
+                startDelayCounter++;
+                // Output silence during delay period
+                for (int ch = 0; ch < numChannels; ++ch) {
+                    if (output[ch] != nullptr) {
+                        output[ch][i] += 0.0f;
+                    }
+                }
+                continue; // Skip processing for this sample
+            }
+            
             // CRITICAL: Check if we're in release BEFORE checking loop - if so, don't loop
             // This ensures that when note is released, looping stops immediately
             bool shouldLoop = loopEnabled && !inRelease && loopEndPoint > loopStartPoint;
@@ -950,10 +1002,13 @@ void SamplerVoice::process(float** output, int numChannels, int numSamples, doub
             } else {
                 // ADSR envelope phases - all with smooth cosine curves for click-free transitions
                 if (attackCounter < attackSamples) {
-                    // Attack phase: 0 to 1.0 with smooth cosine curve
-                    float attackProgress = static_cast<float>(attackCounter) / static_cast<float>(attackSamples);
-                    envelopeValue = 0.5f * (1.0f - std::cos(attackProgress * 3.14159265f)); // Smooth cosine curve
-                    attackCounter++;
+                        // Attack phase: ramp from current value (or 0.0) to 1.0 with smooth cosine curve
+                        // When retriggering same note, start from retriggerOldEnvelope
+                        float attackProgress = static_cast<float>(attackCounter) / static_cast<float>(attackSamples);
+                        float attackCurve = 0.5f * (1.0f - std::cos(attackProgress * 3.14159265f)); // 0.0 to 1.0
+                        float attackStart = (retriggerOldEnvelope > 0.0f) ? retriggerOldEnvelope : 0.0f;
+                        envelopeValue = attackStart + (1.0f - attackStart) * attackCurve; // Smooth ramp from start to 1.0
+                        attackCounter++;
                 } else if (decayCounter < decaySamples) {
                     // Decay phase: 1.0 to sustain level with smooth cosine curve
                     float decayProgress = static_cast<float>(decayCounter) / static_cast<float>(decaySamples);
@@ -1046,14 +1101,9 @@ void SamplerVoice::process(float** output, int numChannels, int numSamples, doub
                 sample *= voiceGain * 0.7f; // Reduce per-voice gain by 30% for polyphonic headroom
                 sample *= fadeGain; // Apply fade to prevent clicks (handles attack/release)
                 
-                // Apply envelope with crossfade for retriggering
-                // If retriggering (retriggerOldEnvelope > 0), crossfade old and new envelopes
+                // Apply envelope - when retriggering same note, envelope ramps smoothly from current value
+                // No crossfade needed since playhead isn't reset, maintaining sample continuity
                 float finalEnvelope = testEnvelopeValue;
-                if (retriggerOldEnvelope > 0.0f && isFadingIn) {
-                    // Crossfade: old envelope fades out as new envelope fades in
-                    float oldEnvelopeFade = 1.0f - fadeGain; // Fade out old envelope
-                    finalEnvelope = retriggerOldEnvelope * oldEnvelopeFade + testEnvelopeValue * fadeGain;
-                }
                 
                 float outputSample = sample * baseAmplitude * finalEnvelope;
                 
