@@ -60,3 +60,7 @@ void ScreenComponent::setLoopEnabled(bool enabled) {
     waveformComponent.setLoopEnabled(enabled);
 }
 
+void ScreenComponent::setPlayheadPosition(double sampleIndex, float envelopeValue) {
+    waveformComponent.setPlayheadPosition(sampleIndex, envelopeValue);
+}
+

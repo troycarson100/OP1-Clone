@@ -55,6 +55,12 @@ public:
     // Get debug info (called from audio thread, safe to read from UI thread)
     void getDebugInfo(int& actualInN, int& outN, int& primeRemaining, int& nonZeroCount) const;
     
+    // Get playhead position (for UI display)
+    double getPlayheadPosition() const;
+    
+    // Get envelope value (for UI fade out)
+    float getEnvelopeValue() const;
+    
     // Set LP filter parameters
     void setLPFilterCutoff(float cutoffHz);
     void setLPFilterResonance(float resonance);

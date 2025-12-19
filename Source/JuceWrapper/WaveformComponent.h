@@ -28,6 +28,9 @@ public:
     void setLoopEndPoint(int sampleIndex);
     void setLoopEnabled(bool enabled);
     
+    // Set playhead position (for yellow line indicator)
+    void setPlayheadPosition(double sampleIndex, float envelopeValue);
+    
     // Clear waveform
     void clear();
     
@@ -44,11 +47,16 @@ private:
     int loopEndPoint;
     bool loopEnabled;
     
+    // Playhead position (for yellow line indicator)
+    double playheadPosition;
+    float envelopeValue; // For fade out during release
+    
     // OP-1 style colors
     juce::Colour waveformColor;
     juce::Colour backgroundColor;
     juce::Colour gridColor;
     juce::Colour markerColor; // Color for start/end point markers
+    juce::Colour playheadColor; // Yellow color for playhead line
     
     // Draw waveform using min/max method (OP-1 style)
     void drawWaveform(juce::Graphics& g, juce::Rectangle<int> bounds);

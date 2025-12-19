@@ -27,6 +27,8 @@ public:
     void setLoopEndPoint(int sampleIndex);
     void setLoopEnabled(bool enabled);
     
+    void setPlayheadPosition(double sampleIndex, float envelopeValue);
+    
     // Get waveform component bounds (for ADSR overlay positioning)
     juce::Rectangle<int> getWaveformBounds() const { return waveformComponent.getBounds(); }
     

@@ -54,8 +54,8 @@ void SamplerEngine::prepare(double sampleRate, int blockSize, int numChannels) {
     modEnv.setAttack(loopEnvAttackMs);
     modEnv.setRelease(loopEnvReleaseMs);
     
-    // Set drive (convert dB to linear gain)
-    float driveGain = std::pow(10.0f, filterDriveDb / 20.0f);
+    // Set drive (convert dB to linear gain, more aggressive mapping)
+    float driveGain = 1.0f + (filterDriveDb / 24.0f) * 3.0f; // 1.0 to 4.0
     drive.setDrive(driveGain);
     
     // Set lofi
@@ -167,14 +167,26 @@ void SamplerEngine::process(float** output, int numChannels, int numSamples) {
     // Soft limit the mixed output to prevent crackling from clipping
     // This prevents hard clipping that causes crackling when multiple voices play
     // Use a more aggressive soft limiter with tanh for smooth limiting
+    // Also apply dynamic gain reduction based on number of active voices
+    int activeVoices = voiceManager.getActiveVoiceCount();
+    float voiceGainReduction = 1.0f;
+    if (activeVoices > 4) {
+        // Reduce gain when more than 4 voices are active
+        // At 8 voices: 0.7x, at 16 voices: 0.5x
+        voiceGainReduction = 1.0f - ((activeVoices - 4) * 0.05f);
+        voiceGainReduction = std::max(0.5f, voiceGainReduction);
+    }
+    
     for (int ch = 0; ch < numChannels; ++ch) {
         if (output[ch] != nullptr) {
             for (int i = 0; i < numSamples; ++i) {
-                float sample = output[ch][i];
+                float sample = output[ch][i] * voiceGainReduction;
                 // Use tanh for smooth, natural-sounding soft limiting
                 // This prevents hard clipping while maintaining dynamics
-                // Scale input to tanh range (tanh saturates at ~±1.0)
-                sample = std::tanh(sample * 0.8f) * 0.95f; // Scale down slightly to leave headroom
+                // More aggressive limiting: scale input more to prevent overflow
+                sample = std::tanh(sample * 0.6f) * 0.9f; // More aggressive scaling (was 0.8f * 0.95f)
+                // Hard safety clamp to prevent any sample from exceeding ±1.0 (prevents glitches)
+                sample = std::max(-1.0f, std::min(1.0f, sample));
                 output[ch][i] = sample;
             }
         }
@@ -265,7 +277,12 @@ void SamplerEngine::process(float** output, int numChannels, int numSamples) {
             }
         }
         
-        // Copy filtered signal to other channels (mono to stereo)
+        // 3. Apply lofi effect (after filter, before copying to other channels)
+        if (lofiAmount > 0.001f) {
+            lofi.processBlock(channelData, channelData, numSamples);
+        }
+        
+        // Copy processed signal to other channels (mono to stereo)
         for (int ch = 1; ch < numChannels; ++ch) {
             if (output[ch] != nullptr) {
                 std::copy(channelData, channelData + numSamples, output[ch]);
@@ -323,6 +340,14 @@ void SamplerEngine::updateActiveVoiceCount() {
     activeVoiceCount = voiceManager.getActiveVoiceCount();
 }
 
+double SamplerEngine::getPlayheadPosition() const {
+    return voiceManager.getPlayheadPosition();
+}
+
+float SamplerEngine::getEnvelopeValue() const {
+    return voiceManager.getEnvelopeValue();
+}
+
 void SamplerEngine::setLPFilterCutoff(float cutoffHz) {
     filterCutoffHz = std::max(20.0f, std::min(20000.0f, cutoffHz));
     // Only update filter if it's been prepared (sampleRate > 0)
@@ -347,8 +372,10 @@ void SamplerEngine::setLPFilterEnvAmount(float amount) {
 
 void SamplerEngine::setLPFilterDrive(float driveDb) {
     filterDriveDb = std::max(0.0f, std::min(24.0f, driveDb));
-    // Convert dB to linear gain
-    float driveGain = std::pow(10.0f, filterDriveDb / 20.0f);
+    // Convert dB to linear gain, but make it more aggressive
+    // At 0 dB: drive = 1.0 (no effect)
+    // At 24 dB: drive = 4.0 (strong saturation)
+    float driveGain = 1.0f + (filterDriveDb / 24.0f) * 3.0f; // 1.0 to 4.0
     if (currentSampleRate > 0.0) {
         drive.setDrive(driveGain);
     }

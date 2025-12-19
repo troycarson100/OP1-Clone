@@ -214,7 +214,10 @@ void EncoderSetupManager::setupEncoder5() {
                 if (ed->loopStartPoint >= ed->loopEndPoint) {
                     ed->loopStartPoint = std::max(0, ed->loopEndPoint - 1);
                 }
-                // TODO: Send to processor
+                // Send to processor
+                ed->audioProcessor.setLoopPoints(ed->loopStartPoint, ed->loopEndPoint);
+                // Update waveform visualization to show loop markers
+                ed->updateWaveformVisualization();
                 // Update parameter display
                 ed->paramDisplay5.setValue(value);
                 double loopStartTimeSeconds = static_cast<double>(ed->loopStartPoint) / ed->sampleRate;

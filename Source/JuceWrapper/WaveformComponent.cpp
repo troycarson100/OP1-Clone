@@ -19,6 +19,13 @@ WaveformComponent::WaveformComponent() {
     loopEndPoint = 0;
     loopEnabled = false;
     
+    // Initialize playhead
+    playheadPosition = -1.0;
+    envelopeValue = 0.0f;
+    
+    // Initialize playhead color (faint yellow)
+    playheadColor = juce::Colour(0x80FFFF00); // Yellow with ~50% opacity
+    
     setOpaque(true);
 }
 
@@ -222,6 +229,12 @@ void WaveformComponent::setLoopEndPoint(int sampleIndex) {
 
 void WaveformComponent::setLoopEnabled(bool enabled) {
     loopEnabled = enabled;
+    repaint();
+}
+
+void WaveformComponent::setPlayheadPosition(double sampleIndex, float envValue) {
+    playheadPosition = sampleIndex;
+    envelopeValue = envValue;
     repaint();
 }
 

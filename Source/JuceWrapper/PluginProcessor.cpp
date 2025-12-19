@@ -204,6 +204,14 @@ int Op1CloneAudioProcessor::getStartPoint() const {
     return adapter.getStartPoint();
 }
 
+double Op1CloneAudioProcessor::getPlayheadPosition() const {
+    return adapter.getPlayheadPosition();
+}
+
+float Op1CloneAudioProcessor::getEnvelopeValue() const {
+    return adapter.getEnvelopeValue();
+}
+
 int Op1CloneAudioProcessor::getEndPoint() const {
     return adapter.getEndPoint();
 }

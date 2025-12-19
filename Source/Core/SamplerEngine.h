@@ -90,6 +90,12 @@ public:
     void setLoopEnabled(bool enabled);
     void setLoopPoints(int startPoint, int endPoint);
     
+    // Get playhead position (for UI display)
+    double getPlayheadPosition() const;
+    
+    // Get envelope value (for UI fade out)
+    float getEnvelopeValue() const;
+    
 private:
     VoiceManager voiceManager;
     LinearSmoother gainSmoother;

@@ -231,7 +231,7 @@ void SamplerVoice::process(float** output, int numChannels, int numSamples, doub
         // Base amplitude (velocity * gain) with scaling to prevent clipping
         // Scale down significantly to prevent clipping when multiple voices play
         // With up to 16 voices, we need much more headroom
-        const float amplitudeScale = 0.15f; // Reduce overall amplitude (was 0.25f, now 0.15f for better polyphony)
+        const float amplitudeScale = 0.1f; // Reduce overall amplitude further for better polyphony (was 0.15f)
         float baseAmplitude = currentVelocity * gain * amplitudeScale;
     
     // Starting envelope value for release (captured when release starts)
@@ -316,18 +316,34 @@ void SamplerVoice::process(float** output, int numChannels, int numSamples, doub
                 }
                 
                 // Handle looping: if loop is enabled and we've reached the end, loop back to start
-                if (loopEnabled && sampleReadPos >= static_cast<double>(loopEndPoint) && loopEndPoint > loopStartPoint) {
-                    // Loop back to loop start point
+                // CRITICAL: Never loop if in release phase - respect ADSR envelope
+                // Check inRelease FIRST to ensure we never loop during release
+                if (!inRelease && loopEnabled && sampleReadPos >= static_cast<double>(loopEndPoint) && loopEndPoint > loopStartPoint) {
+                    // Loop back to loop start point (only if not in release)
                     sampleReadPos = static_cast<double>(loopStartPoint);
                 }
+                // If inRelease is true, we explicitly do NOT loop - let playhead continue to end point
             }
         }
         
-        // If we've hit the end point (and not looping), start release
-        if (sampleReadPos >= static_cast<double>(endPoint) && !inRelease && !loopEnabled) {
-            inRelease = true;
-            releaseCounter = 0;
-            releaseStartValue = envelopeValue;
+        // If we've hit the end point, start release (unless already in release)
+        // When looping is enabled and note is released, stop looping and enter release
+        if (sampleReadPos >= static_cast<double>(endPoint) && !inRelease) {
+            // If loop is enabled, only start release if we've played through at least once
+            // OR if the note was already released (inRelease will be set by noteOff)
+            // This allows the sample to play once, then loop, then release when key is released
+            if (!loopEnabled || sampleReadPos >= static_cast<double>(loopEndPoint)) {
+                inRelease = true;
+                releaseCounter = 0;
+                releaseStartValue = envelopeValue;
+            }
+        }
+        
+        // If we're in release and looping, stop looping immediately
+        // This ensures that when note is released, looping stops and envelope fades out
+        if (inRelease && loopEnabled && sampleReadPos >= static_cast<double>(loopEndPoint) && loopEndPoint > loopStartPoint) {
+            // Don't loop - let it continue past loop end to trigger release completion
+            // The release will complete when we reach the end point
         }
         
         // Process through time-warp processor
@@ -455,6 +471,15 @@ void SamplerVoice::process(float** output, int numChannels, int numSamples, doub
         }
         
         for (int i = 0; i < numSamples; ++i) {
+            // Handle looping: if loop is enabled and we've reached the end, loop back to start
+            // CRITICAL: Never loop if in release phase - respect ADSR envelope
+            // Check inRelease FIRST to ensure we never loop during release
+            if (!inRelease && loopEnabled && playhead >= static_cast<double>(loopEndPoint) && loopEndPoint > loopStartPoint) {
+                // Loop back to loop start point (only if not in release)
+                playhead = static_cast<double>(loopStartPoint);
+            }
+            // If inRelease is true, we explicitly do NOT loop - let playhead continue to end point
+            
             // Bounds-safe sample reading
             if (playhead >= static_cast<double>(endPoint - 1)) {
                 // At or past last valid index - use last sample value
@@ -463,10 +488,14 @@ void SamplerVoice::process(float** output, int numChannels, int numSamples, doub
                     float sample = data[lastIdx] * sampleGain;
                     
                     // Handle release if we hit the end
+                    // When in release (note released), don't start release again
+                    // When looping, only start release if we've reached loop end or note was released
                     if (!inRelease) {
-                        inRelease = true;
-                        releaseCounter = 0;
-                        releaseStartValue = envelopeValue;
+                        if (!loopEnabled || playhead >= static_cast<double>(loopEndPoint)) {
+                            inRelease = true;
+                            releaseCounter = 0;
+                            releaseStartValue = envelopeValue;
+                        }
                     }
                     
                     // Process envelope

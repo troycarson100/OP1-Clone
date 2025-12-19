@@ -98,6 +98,12 @@ public:
     // Get sample editing parameters (for UI display)
     float getRepitch() const;
     int getStartPoint() const;
+    
+    // Get playhead position (for UI display)
+    double getPlayheadPosition() const;
+    
+    // Get envelope value (for UI fade out)
+    float getEnvelopeValue() const;
     int getEndPoint() const;
     float getSampleGain() const;
     

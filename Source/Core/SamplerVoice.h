@@ -79,6 +79,15 @@ public:
     int getEndPoint() const { return endPoint; }
     float getSampleGain() const { return sampleGain; }
     
+    // Get current playback position (for UI display)
+    double getPlayhead() const { return playhead; }
+    
+    // Get envelope value (for UI fade out)
+    float getEnvelopeValue() const { return envelopeValue; }
+    
+    // Check if in release phase (for UI fade out)
+    bool isInRelease() const { return inRelease; }
+    
 private:
     // Sample data (immutable, shared ownership)
     // Captured on noteOn, remains valid until voice releases it

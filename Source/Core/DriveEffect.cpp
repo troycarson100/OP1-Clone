@@ -15,7 +15,7 @@ DriveEffect::~DriveEffect()
 
 void DriveEffect::setDrive(float d)
 {
-    drive = std::max(0.0f, std::min(2.0f, d));
+    drive = std::max(1.0f, d); // Allow values > 2.0 for more aggressive drive
 }
 
 float DriveEffect::tanhApprox(float x) const
@@ -39,14 +39,16 @@ float DriveEffect::process(float input)
     }
     
     // Apply drive: multiply input by drive amount
+    // For more aggressive saturation, we'll use a higher multiplier
     float driven = input * drive;
     
     // Apply soft saturation using tanh
     float saturated = tanhApprox(driven);
     
-    // Normalize: divide by drive to maintain level
-    // This ensures that at drive=1.0, output ≈ input
-    return saturated / drive;
+    // Don't normalize - let the saturation add harmonics
+    // This creates a more noticeable drive effect
+    // The tanh naturally limits the output to ±1.0, so we're safe
+    return saturated;
 }
 
 void DriveEffect::processBlock(const float* input, float* output, int numSamples)

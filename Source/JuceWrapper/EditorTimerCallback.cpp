@@ -48,5 +48,10 @@ void EditorTimerCallback::handleTimerCallback() {
             editor->adsrVisualization.repaint();
         }
     }
+    
+    // Update playhead position (yellow line on waveform)
+    double playheadPos = editor->audioProcessor.getPlayheadPosition();
+    float envelopeVal = editor->audioProcessor.getEnvelopeValue();
+    editor->screenComponent.setPlayheadPosition(playheadPos, envelopeVal);
 }
 

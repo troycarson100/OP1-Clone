@@ -227,5 +227,35 @@ int VoiceManager::getActiveVoiceCount() const {
     return count;
 }
 
+double VoiceManager::getPlayheadPosition() const {
+    // Find the most recently triggered active voice (highest playhead position)
+    // This gives us the "current" playback position for UI display
+    double maxPlayhead = -1.0;
+    for (const auto& voice : voices) {
+        if (voice.isPlaying()) {
+            double playhead = voice.getPlayhead();
+            if (playhead > maxPlayhead) {
+                maxPlayhead = playhead;
+            }
+        }
+    }
+    return maxPlayhead;
+}
+
+float VoiceManager::getEnvelopeValue() const {
+    // Get envelope value from the most recently triggered active voice
+    // This is used for fade out visualization
+    float maxEnvelope = 0.0f;
+    for (const auto& voice : voices) {
+        if (voice.isPlaying()) {
+            float env = voice.getEnvelopeValue();
+            if (env > maxEnvelope) {
+                maxEnvelope = env;
+            }
+        }
+    }
+    return maxEnvelope;
+}
+
 } // namespace Core
 

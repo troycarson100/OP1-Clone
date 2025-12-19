@@ -69,6 +69,14 @@ public:
     // Set playback mode (mono or poly)
     void setPolyphonic(bool polyphonic);  // true = poly, false = mono
     
+    // Get playhead position from the most recently triggered voice (for UI display)
+    // Returns -1 if no active voice
+    double getPlayheadPosition() const;
+    
+    // Get envelope value from the most recently triggered voice (for UI fade out)
+    // Returns 0.0 if no active voice
+    float getEnvelopeValue() const;
+    
 private:
     std::array<SamplerVoice, MAX_VOICES> voices;
     int nextVoiceIndex; // For round-robin allocation

@@ -228,6 +228,14 @@ void JuceEngineAdapter::getDebugInfo(int& actualInN, int& outN, int& primeRemain
     engine.getDebugInfo(actualInN, outN, primeRemaining, nonZeroCount);
 }
 
+double JuceEngineAdapter::getPlayheadPosition() const {
+    return engine.getPlayheadPosition();
+}
+
+float JuceEngineAdapter::getEnvelopeValue() const {
+    return engine.getEnvelopeValue();
+}
+
 void JuceEngineAdapter::convertMidiBuffer(juce::MidiBuffer& midiMessages, int numSamples) {
     midiEventBuffer.clear();
     

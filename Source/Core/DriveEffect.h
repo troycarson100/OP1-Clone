@@ -15,10 +15,9 @@ public:
     
     /**
      * Set drive amount
-     * Range: 0.0-2.0
+     * Range: 1.0-4.0 (or higher)
      * 1.0 = no effect (pass through)
      * > 1.0 = saturation
-     * < 1.0 = attenuation
      */
     void setDrive(float drive);
     
