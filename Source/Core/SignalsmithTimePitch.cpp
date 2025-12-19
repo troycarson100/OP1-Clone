@@ -54,10 +54,18 @@ void SignalsmithTimePitch::prepare(const TimePitchConfig& config)
 {
     currentConfig = config;
     
-    // Configure Signalsmith Stretch using presetCheaper for lower CPU usage
-    // presetCheaper still provides high quality but uses less CPU, better for polyphony
+    // Configure Signalsmith Stretch for very low latency
+    // Using manual configure with much smaller block/interval sizes
+    // presetCheaper: blockSamples = sampleRate*0.1, intervalSamples = sampleRate*0.04
+    // Very low latency config: blockSamples = sampleRate*0.04, intervalSamples = sampleRate*0.01
+    // This significantly reduces latency but uses more CPU
     // splitComputation=true spreads CPU load across blocks to prevent spikes
-    impl->stretch.presetCheaper(config.channels, config.sampleRate, true);
+    double blockSamplesConfig = config.sampleRate * 0.04;  // Further reduced for very low latency
+    double intervalSamplesConfig = config.sampleRate * 0.01;  // Further reduced for very low latency
+    // Ensure minimum sizes for stability (at least 64 samples)
+    int configuredBlockSamples = std::max(64, static_cast<int>(blockSamplesConfig));
+    int configuredIntervalSamples = std::max(32, static_cast<int>(intervalSamplesConfig));
+    impl->stretch.configure(config.channels, configuredBlockSamples, configuredIntervalSamples, true);
     
     // Get latency values and block sizes
     inputLatency = impl->stretch.inputLatency();

@@ -3,6 +3,8 @@
 #include "ITimePitch.h"
 #include "SampleData.h"
 #include <memory>
+#include <atomic>
+#include <cmath>
 
 namespace Core {
 
@@ -26,8 +28,14 @@ public:
     // Trigger note on
     void noteOn(int note, float velocity);
     
+    // Trigger note on with start delay offset (for staggering voice starts)
+    void noteOn(int note, float velocity, int startDelayOffset);
+    
     // Trigger note off (only if playing this note)
     void noteOff(int note);
+    
+    // Start voice steal fade-out (called when voice is being stolen)
+    void startStealFadeOut();
     
     // Check if voice is active (playing, not in release)
     bool isActive() const { return active && !inRelease; }
@@ -47,6 +55,9 @@ public:
     
     // Enable or disable time-warp processing
     void setWarpEnabled(bool enabled) { warpEnabled = enabled; }
+    
+    // DEBUG: Enable sine test mode (outputs 220Hz sine instead of sample data)
+    void setSineTestEnabled(bool enabled) { sineTestEnabled = enabled; }
     
     // ADSR envelope parameters (in milliseconds, except sustain which is 0.0-1.0)
     void setAttackTime(float attackMs) { attackTimeMs = attackMs; }
@@ -114,6 +125,8 @@ private:
     int decayCounter;       // Current position in decay phase
     int releaseSamples;     // Number of samples for release phase
     int releaseCounter;     // Current position in release phase
+    float releaseStartValue; // Envelope value when release started (for smooth release)
+    float retriggerOldEnvelope; // Old envelope value when retriggering (for smooth crossfade)
     bool inRelease;         // True when in release phase
     double currentSampleRate; // For calculating envelope times
     
@@ -130,6 +143,9 @@ private:
     
     // Enable/disable time-warp processing (when false, use simple pitch path)
     bool warpEnabled;
+    
+    // DEBUG: Sine test mode (outputs 220Hz sine instead of sample data)
+    bool sineTestEnabled;
     
     // Latency priming state
     int primeRemainingSamples;
@@ -152,6 +168,72 @@ private:
     bool loopEnabled;        // Loop on/off (default false)
     int loopStartPoint;      // Loop start point (default 0)
     int loopEndPoint;        // Loop end point (default 0)
+    
+    // Per-voice gain (for gain staging)
+    float voiceGain;         // Per-voice gain (default 0.2 for polyphony)
+    
+    // De-click ramp gain (linear ramps for smooth transitions)
+    float rampGain;          // Current ramp gain (0.0 to 1.0)
+    float targetGain;        // Target ramp gain
+    float rampIncrement;     // Ramp increment per sample
+    int rampSamplesRemaining; // Samples remaining in ramp
+    bool isRamping;           // True when ramping
+    
+    // Voice stealing state
+    bool isBeingStolen;      // True when voice is being stolen (fading out)
+    
+    // Micro fade state (for click removal) - DEPRECATED, using rampGain instead
+    int fadeInSamples;       // Fade-in duration (128 samples)
+    int fadeOutSamples;      // Fade-out duration (512 samples)
+    int fadeInCounter;       // Current fade-in position
+    int fadeOutCounter;      // Current fade-out position
+    bool isFadingIn;         // True during fade-in
+    bool isFadingOut;        // True during fade-out
+    
+    // Voice start delay (for staggering starts within audio block)
+    int startDelaySamples;   // Delay before voice starts outputting (0-63 samples)
+    int startDelayCounter;   // Current delay counter
+    
+    // Peak measurement (atomic, for UI display)
+    mutable std::atomic<float> peakOut{0.0f};
+    mutable std::atomic<int> numClippedSamples{0};
+    mutable std::atomic<int> oobGuardHits{0}; // Out-of-bounds guard hits (debug counter)
+    
+    // Anti-aliasing lowpass (for pitch up)
+    float antiAliasState;    // One-pole lowpass state
+    float antiAliasAlpha;    // One-pole coefficient
+    
+    // DC blocking filter (high-pass at ~10Hz)
+    float dcBlockState;      // DC blocker state
+    float dcBlockAlpha;       // DC blocker coefficient
+    
+    // Dithering state
+    unsigned int ditherSeed;  // PRNG seed for dithering
+    
+    // DEBUG: Sine test phase (for 220Hz sine generation)
+    double sinePhase;
+    
+    // Cubic Hermite interpolation helper
+    static float cubicHermite(float y0, float y1, float y2, float y3, float t);
+    
+    // Safety processing functions
+    inline float softClip(float x) const {
+        // Classic cubic soft clip
+        if (x <= -1.0f) return -2.0f/3.0f;
+        if (x >=  1.0f) return  2.0f/3.0f;
+        return x - (x*x*x)/3.0f;
+    }
+    
+    inline float safetyProcess(float x) const {
+        // NaN/Inf guard
+        if (!std::isfinite(x)) x = 0.0f;
+        // Hard clamp to prevent explosion
+        x = std::max(-2.0f, std::min(2.0f, x));
+        // Soft clip
+        return softClip(x);
+    }
+    
+    void updateAntiAliasFilter(float pitchRatio);
     
     // Helper: clamp value
     static float clamp(float value, float min, float max);

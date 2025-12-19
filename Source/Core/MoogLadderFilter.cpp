@@ -116,6 +116,13 @@ float MoogLadderFilter::process(float input)
         return input; // Pass through if not prepared
     }
     
+    // Bypass filter if cutoff is very high (near Nyquist) - pass signal through
+    // At 20kHz cutoff on 44.1kHz sample rate, g is very close to 1.0, but still filters slightly
+    // Bypass completely when cutoff > 18kHz to ensure full signal passes
+    if (cutoffHz >= 18000.0f) {
+        return input; // Bypass filter at high frequencies
+    }
+    
     // Moog ladder filter (Stilson/Smith algorithm)
     // 4-pole cascaded one-pole filters with feedback
     

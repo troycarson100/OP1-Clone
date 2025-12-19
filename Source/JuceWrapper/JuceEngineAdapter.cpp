@@ -286,6 +286,10 @@ void JuceEngineAdapter::setLoopPoints(int startPoint, int endPoint) {
     engine.setLoopPoints(startPoint, endPoint);
 }
 
+void JuceEngineAdapter::setFilterEffectsEnabled(bool enabled) {
+    engine.setFilterEffectsEnabled(enabled);
+}
+
 void JuceEngineAdapter::setLoopEnvAttack(float attackMs) {
     engine.setLoopEnvAttack(attackMs);
 }

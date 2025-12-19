@@ -56,6 +56,10 @@ void EditorEventHandlers::handleButtonClicked(juce::Button* button) {
         bool shiftEnabled = editor->shiftToggleButton.getToggleState();
         editor->adsrLabel.setVisible(false);  // Always hide ADSR label (shift mode uses different parameters)
         
+        // Disable filter/effects processing when shift is ON (for testing)
+        // This allows us to test if filter/effects are causing crackling issues
+        editor->audioProcessor.setFilterEffectsEnabled(!shiftEnabled);
+        
         // Update parameter display labels based on shift state
         editor->updateParameterDisplayLabels();
         

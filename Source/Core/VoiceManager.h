@@ -11,7 +11,7 @@ namespace Core {
 // Simple voice allocation: find free voice or steal oldest
 class VoiceManager {
 public:
-    static constexpr int MAX_VOICES = 16;
+    static constexpr int MAX_VOICES = 6;  // Further reduced to prevent crackling with fast multiple notes
     
     VoiceManager();
     ~VoiceManager();
@@ -30,7 +30,11 @@ public:
     void noteOn(int note, float velocity);
     
     // Handle note on with sample data snapshot (thread-safe)
-    void noteOn(int note, float velocity, SampleDataPtr sampleData);
+    // Returns true if voice was started, false if stolen
+    bool noteOn(int note, float velocity, SampleDataPtr sampleData, bool& wasStolen);
+    
+    // Handle note on with sample data and start delay offset
+    bool noteOn(int note, float velocity, SampleDataPtr sampleData, bool& wasStolen, int startDelayOffset);
     
     // Handle note off - releases voice playing this note
     void noteOff(int note);
@@ -53,6 +57,7 @@ public:
     // Set loop parameters for all voices
     void setLoopEnabled(bool enabled);
     void setLoopPoints(int startPoint, int endPoint);
+    void setSineTestEnabled(bool enabled);
     
     // Get sample editing parameters (from first voice)
     float getRepitch() const;
@@ -81,9 +86,13 @@ private:
     std::array<SamplerVoice, MAX_VOICES> voices;
     int nextVoiceIndex; // For round-robin allocation
     bool isPolyphonicMode; // true = poly, false = mono
+    int voicesStartedThisBlock; // Counter for voices started in current block (for staggering)
     
     // Find a free voice, or steal the oldest one
     int allocateVoice();
+    
+    // Reset voice start counter (called at start of each audio block)
+    void resetVoiceStartCounter() { voicesStartedThisBlock = 0; }
 };
 
 } // namespace Core

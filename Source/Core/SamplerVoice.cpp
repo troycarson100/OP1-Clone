@@ -1,4 +1,6 @@
 #include "SamplerVoice.h"
+#include <atomic>
+#include <cmath>
 #include "SignalsmithTimePitch.h"
 #include <algorithm>
 #include <cmath>
@@ -27,6 +29,8 @@ SamplerVoice::SamplerVoice()
     , decayCounter(0)
     , releaseSamples(0)
     , releaseCounter(0)
+    , releaseStartValue(0.0f)
+    , retriggerOldEnvelope(0.0f)
     , inRelease(false)
     , currentSampleRate(44100.0)
     , inputBuffer(nullptr)
@@ -34,10 +38,32 @@ SamplerVoice::SamplerVoice()
     , bufferSize(0)
     , sampleReadPos(0.0)
     , warpEnabled(true)
+    , sineTestEnabled(false)
+    , sinePhase(0.0)
     , primeRemainingSamples(0)
     , loopEnabled(false)
     , loopStartPoint(0)
     , loopEndPoint(0)
+    , voiceGain(0.7f)  // Increased for better volume
+    , rampGain(0.0f)
+    , targetGain(0.0f)
+    , rampIncrement(0.0f)
+    , rampSamplesRemaining(0)
+    , isRamping(false)
+    , isBeingStolen(false)
+    , fadeInSamples(512)
+    , fadeOutSamples(4096)
+    , fadeInCounter(0)
+    , fadeOutCounter(0)
+    , isFadingIn(false)
+    , isFadingOut(false)
+    , startDelaySamples(0)
+    , startDelayCounter(0)
+    , antiAliasState(0.0f)
+    , antiAliasAlpha(0.0f)
+    , dcBlockState(0.0f)
+    , dcBlockAlpha(0.0f)
+    , ditherSeed(1)
     , lastActualInN(0)
     , lastOutN(0)
     , lastPrimeRemaining(0)
@@ -62,8 +88,8 @@ void SamplerVoice::setSampleData(SampleDataPtr sampleData) {
     sampleData_ = sampleData;
     
     if (sampleData_ && sampleData_->length > 0) {
-        // Initialize start/end points to full sample
-        startPoint = 0;
+    // Initialize start/end points to full sample
+    startPoint = 0;
         endPoint = sampleData_->length;
     } else {
         startPoint = 0;
@@ -79,6 +105,10 @@ void SamplerVoice::setSampleData(SampleDataPtr sampleData) {
 // }
 
 void SamplerVoice::noteOn(int note, float velocity) {
+    noteOn(note, velocity, 0);
+}
+
+void SamplerVoice::noteOn(int note, float velocity, int startDelayOffset) {
     // #region agent log
     {
         std::ofstream log("/Users/troycarson/Documents/JUCE Projects/OP1-Clone/.cursor/debug.log", std::ios::app);
@@ -95,6 +125,26 @@ void SamplerVoice::noteOn(int note, float velocity) {
     
     bool wasActive = active;
     active = (sampleData_ != nullptr && sampleData_->length > 0 && !sampleData_->mono.empty());
+    
+    // Start ramp gain: 0 -> 1 over 64 samples (very short for rapid triggers)
+    // CRITICAL: If voice was being stolen, wait until fade-out completes
+    if (active && currentSampleRate > 0.0) {
+        // If voice was being stolen and still fading out, don't start new note yet
+        if (isBeingStolen && rampGain > 0.0f) {
+            // Voice is still fading out from steal - wait until it completes
+            // The fade-out will continue, and we'll start the new note when rampGain reaches 0
+            // For now, just clear the stealing flag and let fade-out complete
+            // The new note will start in the next process() call when rampGain <= 0
+            return; // Don't start new note yet
+        }
+        
+        rampGain = 0.0f; // Always start from 0, even if voice was stolen
+        targetGain = 1.0f;
+        rampSamplesRemaining = 64; // Very short fade-in for rapid triggers
+        rampIncrement = 1.0f / 64.0f;
+        isRamping = true;
+        isBeingStolen = false;
+    }
     
     // Calculate pitch in semitones and set it (include repitch offset)
     if (warpEnabled && timePitchProcessor && active) {
@@ -125,12 +175,27 @@ void SamplerVoice::noteOn(int note, float velocity) {
         // If wasActive, just update pitch - no reset, no re-priming
     }
     
-    // Reset ADSR envelope
-    envelopeValue = 0.0f;
+    // Reset ADSR envelope - start from 0.0 for smooth attack
+    // CRITICAL: If retriggering an active voice, store old envelope for crossfade
+    if (!wasActive) {
+        // New voice - start from 0.0
+        envelopeValue = 0.0f;
+        retriggerOldEnvelope = 0.0f; // No old envelope for new voice
+    } else {
+        // Retriggering - store current envelope value for crossfade
+        retriggerOldEnvelope = envelopeValue;
+        envelopeValue = 0.0f; // Start new attack from 0.0
+    }
     attackCounter = 0;
     decayCounter = 0;
     inRelease = false;
     releaseCounter = 0;
+    releaseStartValue = 0.0f; // Initialize release start value
+    
+    // Reset debug counters
+    oobGuardHits.store(0, std::memory_order_relaxed);
+    numClippedSamples.store(0, std::memory_order_relaxed);
+    peakOut.store(0.0f, std::memory_order_relaxed);
     
     // Calculate sample counts from ADSR parameters
     attackSamples = static_cast<int>(currentSampleRate * attackTimeMs / 1000.0);
@@ -141,17 +206,102 @@ void SamplerVoice::noteOn(int note, float velocity) {
     
     releaseSamples = static_cast<int>(currentSampleRate * releaseTimeMs / 1000.0);
     if (releaseSamples < 1) releaseSamples = 1;
+    
+    // Reset micro fade state - CRITICAL for smooth retriggering
+    fadeInCounter = 0;
+    fadeOutCounter = 0;
+    isFadingIn = true;  // Start fade-in
+    isFadingOut = false;
+    
+    // Calculate fade durations - slightly longer for smoother transitions
+    fadeInSamples = 64;  // ~1.45ms at 44.1kHz - smooth ramp-in for rapid triggers
+    fadeOutSamples = 4096; // ~92.9ms at 44.1kHz - longer for smoother release
+    
+    // Set start delay for staggering voice starts within audio block
+    startDelaySamples = startDelayOffset;
+    startDelayCounter = 0;
+    
+    // CRITICAL: If retriggering an active voice, ensure smooth transition
+    // Reset any ongoing fade-out to prevent clicks
+    if (wasActive && isFadingOut) {
+        isFadingOut = false;
+        fadeOutCounter = 0;
+    }
+    
+    // Reset anti-aliasing filter
+    antiAliasState = 0.0f;
+    
+    // Reset DC blocking filter
+    dcBlockState = 0.0f;
+    // Calculate DC blocker coefficient (high-pass at ~10Hz)
+    if (currentSampleRate > 0.0) {
+        float cutoffHz = 10.0f;
+        float rc = 1.0f / (2.0f * 3.14159265f * cutoffHz);
+        float dt = 1.0f / static_cast<float>(currentSampleRate);
+        dcBlockAlpha = dt / (rc + dt);
+    } else {
+        dcBlockAlpha = 0.0f;
+    }
+    
+    // Initialize dither seed
+    ditherSeed = static_cast<unsigned int>(std::chrono::steady_clock::now().time_since_epoch().count()) ^ (static_cast<unsigned int>(note) << 16);
+    
+    // Calculate pitch ratio for anti-aliasing
+    if (warpEnabled && timePitchProcessor && active) {
+        int semitones = currentNote - rootMidiNote;
+        float totalSemitones = static_cast<float>(semitones) + repitchSemitones;
+        float pitchRatio = std::pow(2.0f, totalSemitones / 12.0f);
+        updateAntiAliasFilter(pitchRatio);
+    } else {
+        updateAntiAliasFilter(1.0f);
+    }
 }
 
 void SamplerVoice::noteOff(int note) {
     // Only start release if this voice is playing the specified note
     if (currentNote == note && active && !inRelease) {
         // Start release phase instead of immediately stopping
+        // Store current envelope value as starting point for release BEFORE setting inRelease
+        releaseStartValue = envelopeValue;
         inRelease = true;
         releaseCounter = 0;
-        // Store current envelope value as starting point for release
-        // (envelopeValue will fade from current value to 0)
+        // (envelopeValue will fade from releaseStartValue to 0)
+        
+        // Start fade-out ramp: current rampGain -> 0 over 512 samples
+        if (currentSampleRate > 0.0) {
+            targetGain = 0.0f;
+            rampSamplesRemaining = 512;
+            rampIncrement = -rampGain / 512.0f; // Negative increment to fade out
+            isRamping = true;
+        }
+        
+        // Start fade-out (legacy, for compatibility)
+        isFadingOut = true;
+        fadeOutCounter = 0;
+        isFadingIn = false;  // Stop fade-in if still active
+        
+        // CRITICAL: If we're in a loop range when release is triggered, 
+        // immediately advance past loop end to prevent any further looping
+        if (loopEnabled && loopEndPoint > loopStartPoint) {
+            if (sampleReadPos >= static_cast<double>(loopStartPoint) && sampleReadPos < static_cast<double>(loopEndPoint)) {
+                // We're in the loop range - jump to just past loop end to exit loop immediately
+                sampleReadPos = static_cast<double>(loopEndPoint);
+            }
+            // Also check playhead for simple pitch path
+            if (playhead >= static_cast<double>(loopStartPoint) && playhead < static_cast<double>(loopEndPoint)) {
+                playhead = static_cast<double>(loopEndPoint);
+            }
+        }
     }
+}
+
+// Start voice steal fade-out (called when voice is being stolen)
+void SamplerVoice::startStealFadeOut() {
+    isBeingStolen = true;
+    targetGain = 0.0f;
+    rampSamplesRemaining = 256; // Short fade-out for stealing
+    rampIncrement = -rampGain / 256.0f;
+    isRamping = true;
 }
 
 void SamplerVoice::process(float** output, int numChannels, int numSamples, double sampleRate) {
@@ -228,11 +378,11 @@ void SamplerVoice::process(float** output, int numChannels, int numSamples, doub
         }
     }
     
-        // Base amplitude (velocity * gain) with scaling to prevent clipping
+    // Base amplitude (velocity * gain) with scaling to prevent clipping
         // Scale down significantly to prevent clipping when multiple voices play
-        // With up to 16 voices, we need much more headroom
-        const float amplitudeScale = 0.1f; // Reduce overall amplitude further for better polyphony (was 0.15f)
-        float baseAmplitude = currentVelocity * gain * amplitudeScale;
+        // Reduced further to prevent polyphonic overload
+        const float amplitudeScale = 0.4f; // Increased slightly for better volume
+    float baseAmplitude = currentVelocity * gain * amplitudeScale;
     
     // Starting envelope value for release (captured when release starts)
     float releaseStartValue = 1.0f;
@@ -257,7 +407,8 @@ void SamplerVoice::process(float** output, int numChannels, int numSamples, doub
             speed = 1.0;
         }
         
-        // Handle latency priming: feed zeros until primeRemainingSamples is consumed
+        // Handle latency priming: pre-fill with actual sample data instead of zeros
+        // This reduces perceived latency by giving the processor real audio from the start
         int samplesToPrime = 0;
         if (primeRemainingSamples > 0) {
             samplesToPrime = std::min(primeRemainingSamples, numSamples);
@@ -267,11 +418,28 @@ void SamplerVoice::process(float** output, int numChannels, int numSamples, doub
         // Read from sample at original speed (1x) - this ensures constant duration
         std::fill(inputBuffer, inputBuffer + numSamples, 0.0f);
         
-        // Fill input buffer: zeros for priming, then actual sample data
+        // Fill input buffer: during priming, read forward from startPoint
+        // After priming, continue from sampleReadPos (which we'll advance after priming)
         for (int i = 0; i < numSamples; ++i) {
+            // Calculate the read position
+            double readPos;
             if (i < samplesToPrime) {
-                // Priming phase: feed zeros
+                // Priming phase: read forward from startPoint
+                // We'll advance sampleReadPos after priming to skip the primed portion
+                readPos = static_cast<double>(startPoint) + static_cast<double>(i);
+                // Clamp to valid range
+                if (readPos >= static_cast<double>(len)) {
+                    readPos = static_cast<double>(len - 1);
+                }
+            } else {
+                // Normal phase: read from current sampleReadPos
+                readPos = sampleReadPos;
+            }
+            
+            if (i < samplesToPrime) {
+                // Priming phase: feed zeros (processor needs to accumulate input before producing output)
                 inputBuffer[i] = 0.0f;
+                // Don't advance sampleReadPos during priming
             } else {
                 // Normal phase: read from sample at 1x speed (respecting start/end points)
                 // Bounds-safe interpolation
@@ -281,7 +449,7 @@ void SamplerVoice::process(float** output, int numChannels, int numSamples, doub
                     if (lastIdx >= 0 && lastIdx < len) {
                         inputBuffer[i] = data[lastIdx] * sampleGain;
                     } else {
-                        inputBuffer[i] = 0.0f;
+                    inputBuffer[i] = 0.0f;
                     }
                 } else if (sampleReadPos < static_cast<double>(startPoint)) {
                     inputBuffer[i] = 0.0f;
@@ -300,25 +468,33 @@ void SamplerVoice::process(float** output, int numChannels, int numSamples, doub
                     if (idx0 < 0 || idx0 >= len || idx1 < 0 || idx1 >= len) {
                         inputBuffer[i] = 0.0f;
                     } else {
-                        float frac = static_cast<float>(sampleReadPos - static_cast<double>(idx0));
-                        frac = std::max(0.0f, std::min(1.0f, frac));
+                    float frac = static_cast<float>(sampleReadPos - static_cast<double>(idx0));
+                    frac = std::max(0.0f, std::min(1.0f, frac));
                         float s0 = data[idx0];
                         float s1 = data[idx1];
                         inputBuffer[i] = (s0 * (1.0f - frac) + s1 * frac) * sampleGain;
                     }
                 }
                 
+                // CRITICAL: Check if we're in release BEFORE advancing - if so, don't loop
+                // This ensures that when note is released, looping stops immediately
+                bool shouldLoop = loopEnabled && !inRelease && loopEndPoint > loopStartPoint;
+                
                 sampleReadPos += speed;
                 
-                // Guard against NaN/Inf
+                // Guard against NaN/Inf (already checked above, but double-check after increment)
                 if (!std::isfinite(sampleReadPos)) {
+                    oobGuardHits.fetch_add(1, std::memory_order_relaxed);
                     sampleReadPos = static_cast<double>(startPoint);
+                    if (inRelease) {
+                        envelopeValue = 0.0f;
+                    }
                 }
                 
                 // Handle looping: if loop is enabled and we've reached the end, loop back to start
                 // CRITICAL: Never loop if in release phase - respect ADSR envelope
-                // Check inRelease FIRST to ensure we never loop during release
-                if (!inRelease && loopEnabled && sampleReadPos >= static_cast<double>(loopEndPoint) && loopEndPoint > loopStartPoint) {
+                // We check shouldLoop which already verified !inRelease
+                if (shouldLoop && sampleReadPos >= static_cast<double>(loopEndPoint)) {
                     // Loop back to loop start point (only if not in release)
                     sampleReadPos = static_cast<double>(loopStartPoint);
                 }
@@ -333,9 +509,9 @@ void SamplerVoice::process(float** output, int numChannels, int numSamples, doub
             // OR if the note was already released (inRelease will be set by noteOff)
             // This allows the sample to play once, then loop, then release when key is released
             if (!loopEnabled || sampleReadPos >= static_cast<double>(loopEndPoint)) {
-                inRelease = true;
-                releaseCounter = 0;
-                releaseStartValue = envelopeValue;
+            inRelease = true;
+            releaseCounter = 0;
+            releaseStartValue = envelopeValue;
             }
         }
         
@@ -355,6 +531,11 @@ void SamplerVoice::process(float** output, int numChannels, int numSamples, doub
             // Pass numSamples input, request numSamples output (1:1 ratio for constant duration)
             // The processor may return less than numSamples if not enough accumulated yet
             processedSamples = timePitchProcessor->process(inputBuffer, numSamples, outputBuffer, numSamples);
+            
+            // Time-warp underrun protection: fill with zeros if underran
+            if (processedSamples < numSamples * 0.9f) {
+                std::fill(outputBuffer + processedSamples, outputBuffer + numSamples, 0.0f);
+            }
             
             // #region agent log
             {
@@ -390,35 +571,42 @@ void SamplerVoice::process(float** output, int numChannels, int numSamples, doub
         // #endregion
         
         // Apply envelope and mix
-        // Process all samples we got, even if less than numSamples
-        // The rest of the buffer is already zero-filled
+        // Only process samples that were actually produced by the processor
+        // If processedSamples < numSamples, the rest of outputBuffer is already zero-filled
         // IMPORTANT: Even if processedSamples is 0 (still priming), keep voice active
         // and process the envelope so the voice doesn't get deactivated prematurely
+        // Use processedSamples to avoid processing zeros that weren't produced yet
+        int samplesToProcess = std::max(processedSamples, 0);
         for (int i = 0; i < numSamples; ++i) {
             // Envelope
             if (inRelease) {
-                if (releaseCounter == 0) {
-                    releaseStartValue = envelopeValue;
-                }
                 if (releaseCounter < releaseSamples) {
+                    // Release phase: smooth cosine curve from releaseStartValue to 0.0
                     float releaseProgress = static_cast<float>(releaseCounter) / static_cast<float>(releaseSamples);
-                    envelopeValue = releaseStartValue * (1.0f - releaseProgress);
+                    // Smooth cosine release: starts at 1.0, ends at 0.0
+                    float releaseCurve = 0.5f * (1.0f + std::cos(releaseProgress * 3.14159265f)); // 1.0 to 0.0
+                    envelopeValue = releaseStartValue * releaseCurve; // Map from releaseStartValue to 0.0
                     releaseCounter++;
                 } else {
+                    // Release complete - envelope is at 0.0
                     envelopeValue = 0.0f;
-                    active = false;
-                    break;
+                    // Don't deactivate immediately - let fade-out complete first
+                    // active = false; // Commented out - let fade-out handle deactivation
+                    // break; // Don't break - continue processing until fade-out completes
                 }
             } else {
-                // ADSR envelope phases
+                // ADSR envelope phases - all with smooth cosine curves for click-free transitions
                 if (attackCounter < attackSamples) {
-                    // Attack phase: 0 to 1.0
-                    envelopeValue = static_cast<float>(attackCounter) / static_cast<float>(attackSamples);
+                    // Attack phase: 0 to 1.0 with smooth cosine curve
+                    float attackProgress = static_cast<float>(attackCounter) / static_cast<float>(attackSamples);
+                    envelopeValue = 0.5f * (1.0f - std::cos(attackProgress * 3.14159265f)); // Smooth cosine curve
                     attackCounter++;
                 } else if (decayCounter < decaySamples) {
-                    // Decay phase: 1.0 to sustain level
+                    // Decay phase: 1.0 to sustain level with smooth cosine curve
                     float decayProgress = static_cast<float>(decayCounter) / static_cast<float>(decaySamples);
-                    envelopeValue = 1.0f - (1.0f - sustainLevel) * decayProgress;
+                    // Smooth cosine decay: starts at 1.0, ends at sustainLevel
+                    float decayCurve = 0.5f * (1.0f + std::cos(decayProgress * 3.14159265f)); // 1.0 to 0.0
+                    envelopeValue = sustainLevel + (1.0f - sustainLevel) * decayCurve; // Map to 1.0 to sustainLevel
                     decayCounter++;
                 } else {
                     // Sustain phase: hold at sustain level
@@ -426,9 +614,127 @@ void SamplerVoice::process(float** output, int numChannels, int numSamples, doub
                 }
             }
             
-            float amplitude = baseAmplitude * envelopeValue;
-            float sample = (i < processedSamples) ? outputBuffer[i] : 0.0f;
+                // Use ADSR envelope (already smoothed in calculation above)
+                float testEnvelopeValue = envelopeValue;
+            
+            float sample = 0.0f;
+            
+            // DEBUG: Sine test mode - output 220Hz sine instead of sample data
+            if (sineTestEnabled) {
+                // Generate 220Hz sine wave
+                const double phaseIncrement = 220.0 * 2.0 * 3.14159265358979323846 / sampleRate;
+                sinePhase += phaseIncrement;
+                if (sinePhase > 2.0 * 3.14159265358979323846) {
+                    sinePhase -= 2.0 * 3.14159265358979323846;
+                }
+                sample = static_cast<float>(std::sin(sinePhase));
+            } else {
+                // Normal sample playback
+                sample = (i < processedSamples) ? outputBuffer[i] : 0.0f;
+            }
+            
+            // DC blocking filter (high-pass at ~10Hz)
+            dcBlockState += dcBlockAlpha * (sample - dcBlockState);
+            sample = sample - dcBlockState;
+            
+            // TEMPORARY: Disable anti-aliasing filter to test if it's causing fuzziness
+            // if (antiAliasAlpha < 1.0f) {
+            //     antiAliasState += antiAliasAlpha * (sample - antiAliasState);
+            //     sample = antiAliasState;
+            // }
+            
+            // TEMPORARY: Disable ramp gain to test if it's causing clicks
+            // Update ramp gain (linear ramp) - once per sample
+            // if (isRamping && rampSamplesRemaining > 0) {
+            //     rampGain += rampIncrement;
+            //     rampSamplesRemaining--;
+            //     if (rampSamplesRemaining <= 0) {
+            //         rampGain = targetGain;
+            //         isRamping = false;
+            //         // If ramp reached 0 and we're being stolen, deactivate voice
+            //         if (isBeingStolen && rampGain <= 0.0f) {
+            //             active = false;
+            //             isBeingStolen = false;
+            //         }
+            //     }
+            // }
+            // Update ramp gain smoothly (0 -> 1 over 128 samples)
+            if (isRamping && rampSamplesRemaining > 0) {
+                rampGain += rampIncrement;
+                rampSamplesRemaining--;
+                if (rampSamplesRemaining <= 0) {
+                    rampGain = targetGain;
+                    isRamping = false;
+                }
+            }
+            
+            // Apply fade-in/out to prevent clicks on attack and release
+            // CRITICAL: Start fade-in at 0.0 to ensure first sample is silent
+            float fadeGain = 0.0f;
+            
+            // Fade-in on note start (smooth cosine curve) - start from 0.0
+            if (isFadingIn && fadeInCounter < fadeInSamples) {
+                // CRITICAL: First sample (fadeInCounter == 0) must be exactly 0.0
+                if (fadeInCounter == 0) {
+                    fadeGain = 0.0f;
+                } else {
+                    // Calculate progress for subsequent samples
+                    float progress = static_cast<float>(fadeInCounter) / static_cast<float>(fadeInSamples);
+                    fadeGain = 0.5f * (1.0f - std::cos(progress * 3.14159265f)); // Smooth cosine fade-in (0.0 to 1.0)
+                }
+                fadeInCounter++;
+            } else {
+                isFadingIn = false;
+                fadeGain = 1.0f; // Full gain after fade-in completes
+            }
+            
+            // Fade-out on note release (smooth exponential curve - very smooth)
+            if (isFadingOut && fadeOutCounter < fadeOutSamples) {
+                // CRITICAL: First sample of fade-out (fadeOutCounter == 0) should maintain current gain
+                // to avoid a pop. Start from fadeOutCounter + 1 to ensure smooth transition.
+                float progress = static_cast<float>(fadeOutCounter + 1) / static_cast<float>(fadeOutSamples);
+                // Exponential fade-out: very smooth, goes all the way to 0.0
+                // Use a gentler exponential curve for smoother fade-out
+                float fadeOutGain = std::exp(-progress * 4.0f); // Exponential fade-out (smooth to 0.0)
+                fadeGain = std::min(fadeGain, fadeOutGain);
+                fadeOutCounter++;
+                
+                // Deactivate voice only after fade-out completes
+                if (fadeOutCounter >= fadeOutSamples) {
+                    active = false;
+                }
+            } else if (isFadingOut && fadeOutCounter >= fadeOutSamples) {
+                // Fade-out complete - ensure we're at 0.0
+                fadeGain = 0.0f;
+                active = false;
+            }
+            
+            // Simplified gain staging: combine all gains into single multiplication
+            // TEMPORARY: Keep original gain staging to test if combined gain is causing issues
+            // Simplified gain staging: use ONLY fade-in/out for attack/release, envelope for sustain
+            // Reduced per-voice gain to prevent polyphonic overload
+            sample *= voiceGain * 0.7f; // Reduce per-voice gain by 30% for polyphonic headroom
+            // Apply both fade and envelope - fade prevents clicks, envelope shapes the sound
+            sample *= fadeGain; // Apply fade to prevent clicks (handles attack/release)
+            // Apply envelope - it works together with fade to shape the sound
+            float amplitude = baseAmplitude * testEnvelopeValue;
             float outputSample = sample * amplitude;
+            
+            // Safety processing: Only NaN guard and hard clamp - no soft clip to reduce fuzziness
+            if (!std::isfinite(outputSample)) {
+                outputSample = 0.0f;
+            }
+            outputSample = std::max(-1.0f, std::min(1.0f, outputSample));
+            
+            // Peak measurement (atomic, lock-free)
+            float absSample = std::abs(outputSample);
+            float currentPeak = peakOut.load(std::memory_order_relaxed);
+            if (absSample > currentPeak) {
+                peakOut.store(absSample, std::memory_order_relaxed);
+            }
+            if (absSample > 1.0f) {
+                numClippedSamples.fetch_add(1, std::memory_order_relaxed);
+            }
             
             for (int ch = 0; ch < numChannels; ++ch) {
                 if (output[ch] != nullptr) {
@@ -471,10 +777,14 @@ void SamplerVoice::process(float** output, int numChannels, int numSamples, doub
         }
         
         for (int i = 0; i < numSamples; ++i) {
+            // CRITICAL: Check if we're in release BEFORE checking loop - if so, don't loop
+            // This ensures that when note is released, looping stops immediately
+            bool shouldLoop = loopEnabled && !inRelease && loopEndPoint > loopStartPoint;
+            
             // Handle looping: if loop is enabled and we've reached the end, loop back to start
             // CRITICAL: Never loop if in release phase - respect ADSR envelope
-            // Check inRelease FIRST to ensure we never loop during release
-            if (!inRelease && loopEnabled && playhead >= static_cast<double>(loopEndPoint) && loopEndPoint > loopStartPoint) {
+            // We check shouldLoop which already verified !inRelease
+            if (shouldLoop && playhead >= static_cast<double>(loopEndPoint)) {
                 // Loop back to loop start point (only if not in release)
                 playhead = static_cast<double>(loopStartPoint);
             }
@@ -492,25 +802,104 @@ void SamplerVoice::process(float** output, int numChannels, int numSamples, doub
                     // When looping, only start release if we've reached loop end or note was released
                     if (!inRelease) {
                         if (!loopEnabled || playhead >= static_cast<double>(loopEndPoint)) {
-                            inRelease = true;
-                            releaseCounter = 0;
-                            releaseStartValue = envelopeValue;
-                        }
-                    }
-                    
+                    inRelease = true;
+                    releaseCounter = 0;
+                    releaseStartValue = envelopeValue;
+                }
+            }
+            
                     // Process envelope
                     if (releaseCounter < releaseSamples) {
-                        float releaseProgress = static_cast<float>(releaseCounter) / static_cast<float>(releaseSamples);
-                        envelopeValue = releaseStartValue * (1.0f - releaseProgress);
-                        releaseCounter++;
+                    float releaseProgress = static_cast<float>(releaseCounter) / static_cast<float>(releaseSamples);
+                    // Use smooth cosine curve for release envelope to prevent crackling
+                    float smoothProgress = 0.5f * (1.0f - std::cos(releaseProgress * 3.14159265f));
+                    envelopeValue = releaseStartValue * (1.0f - smoothProgress);
+                    releaseCounter++;
                     } else {
                         envelopeValue = 0.0f;
                         active = false;
                         break;
                     }
                     
+                    // DC blocking filter (high-pass at ~10Hz)
+                    dcBlockState += dcBlockAlpha * (sample - dcBlockState);
+                    sample = sample - dcBlockState;
+                    
+                    // TEMPORARY: Disable ramp gain to test if it's causing clicks
+                    // Update ramp gain (linear ramp) - once per sample
+                    // if (isRamping && rampSamplesRemaining > 0) {
+                    //     rampGain += rampIncrement;
+                    //     rampSamplesRemaining--;
+                    //     if (rampSamplesRemaining <= 0) {
+                    //         rampGain = targetGain;
+                    //         isRamping = false;
+                    //         if (isBeingStolen && rampGain <= 0.0f) {
+                    //             active = false;
+                    //             isBeingStolen = false;
+                    //         }
+                    //     }
+                    // }
+                    // Force ramp gain to 1.0 for testing
+                    rampGain = 1.0f;
+                    
+                    // Apply fade-in/out to prevent clicks on attack and release
+                    float fadeGain = 1.0f;
+                    
+                    // Fade-in on note start (smooth cosine curve) - start from 0.0
+                    if (isFadingIn && fadeInCounter < fadeInSamples) {
+                        float progress = static_cast<float>(fadeInCounter) / static_cast<float>(fadeInSamples);
+                        fadeGain = 0.5f * (1.0f - std::cos(progress * 3.14159265f)); // Smooth cosine fade-in (0.0 to 1.0)
+                        fadeInCounter++;
+                    } else {
+                        isFadingIn = false;
+                        fadeGain = 1.0f; // Full gain after fade-in completes
+                    }
+                    
+                    // Fade-out on note release (smooth exponential curve - very smooth)
+                    if (isFadingOut && fadeOutCounter < fadeOutSamples) {
+                        float progress = static_cast<float>(fadeOutCounter) / static_cast<float>(fadeOutSamples);
+                        // Exponential fade-out: very smooth, goes all the way to 0.0
+                        float fadeOutGain = std::exp(-progress * 5.0f); // Exponential fade-out (smooth to 0.0)
+                        fadeGain = std::min(fadeGain, fadeOutGain);
+                        fadeOutCounter++;
+                        
+                        // Deactivate voice only after fade-out completes
+                        if (fadeOutCounter >= fadeOutSamples) {
+                            active = false;
+                        }
+                    } else if (isFadingOut && fadeOutCounter >= fadeOutSamples) {
+                        // Fade-out complete - ensure we're at 0.0
+                        fadeGain = 0.0f;
+                        active = false;
+                    }
+                    
+                    // Simplified gain staging: combine all gains into single multiplication
+                    // TEMPORARY: Keep original gain staging to test if combined gain is causing issues
+                    // Apply both fade and envelope - fade prevents clicks, envelope shapes the sound
+                    sample *= voiceGain;
+                    sample *= fadeGain; // Apply fade to prevent clicks (handles attack/release)
+                    // Apply envelope - it works together with fade to shape the sound
                     float amplitude = baseAmplitude * envelopeValue;
                     float outputSample = sample * amplitude;
+                    
+                    // Safety processing: Only NaN guard and hard clamp - no soft clip
+                    if (!std::isfinite(outputSample)) {
+                        outputSample = 0.0f;
+                    }
+                    outputSample = std::max(-1.0f, std::min(1.0f, outputSample));
+                    
+                    // Peak measurement (atomic, lock-free)
+                    float absSample = std::abs(outputSample);
+                    float currentPeak = peakOut.load(std::memory_order_relaxed);
+                    if (absSample > currentPeak) {
+                        peakOut.store(absSample, std::memory_order_relaxed);
+                    }
+                    if (absSample > 1.0f) {
+                        numClippedSamples.fetch_add(1, std::memory_order_relaxed);
+                    }
+                    
+                    // Update oobGuardHits if we hit bounds (already counted above)
+                    
                     for (int ch = 0; ch < numChannels; ++ch) {
                         if (output[ch] != nullptr) {
                             output[ch][i] += outputSample;
@@ -543,49 +932,150 @@ void SamplerVoice::process(float** output, int numChannels, int numSamples, doub
                 if (index1 >= endPoint) index1 = endPoint - 1;
                 
                 // Process envelope
-                if (inRelease) {
-                    if (releaseCounter == 0) {
-                        releaseStartValue = envelopeValue;
-                    }
-                    if (releaseCounter < releaseSamples) {
-                        float releaseProgress = static_cast<float>(releaseCounter) / static_cast<float>(releaseSamples);
-                        envelopeValue = releaseStartValue * (1.0f - releaseProgress);
-                        releaseCounter++;
-                    } else {
-                        envelopeValue = 0.0f;
-                        active = false;
-                        break;
-                    }
+            if (inRelease) {
+                if (releaseCounter < releaseSamples) {
+                    // Release phase: smooth cosine curve from releaseStartValue to 0.0
+                    float releaseProgress = static_cast<float>(releaseCounter) / static_cast<float>(releaseSamples);
+                    // Smooth cosine release: starts at 1.0, ends at 0.0
+                    float releaseCurve = 0.5f * (1.0f + std::cos(releaseProgress * 3.14159265f)); // 1.0 to 0.0
+                    envelopeValue = releaseStartValue * releaseCurve; // Map from releaseStartValue to 0.0
+                    releaseCounter++;
                 } else {
-                    // ADSR envelope phases
-                    if (attackCounter < attackSamples) {
-                        envelopeValue = static_cast<float>(attackCounter) / static_cast<float>(attackSamples);
-                        attackCounter++;
-                    } else if (decayCounter < decaySamples) {
-                        float decayProgress = static_cast<float>(decayCounter) / static_cast<float>(decaySamples);
-                        envelopeValue = 1.0f - (1.0f - sustainLevel) * decayProgress;
-                        decayCounter++;
+                    // Release complete - envelope is at 0.0
+                    envelopeValue = 0.0f;
+                    // Don't deactivate immediately - let fade-out complete first
+                    // active = false; // Commented out - let fade-out handle deactivation
+                    // break; // Don't break - continue processing until fade-out completes
+                }
+            } else {
+                // ADSR envelope phases - all with smooth cosine curves for click-free transitions
+                if (attackCounter < attackSamples) {
+                    // Attack phase: 0 to 1.0 with smooth cosine curve
+                    float attackProgress = static_cast<float>(attackCounter) / static_cast<float>(attackSamples);
+                    envelopeValue = 0.5f * (1.0f - std::cos(attackProgress * 3.14159265f)); // Smooth cosine curve
+                    attackCounter++;
+                } else if (decayCounter < decaySamples) {
+                    // Decay phase: 1.0 to sustain level with smooth cosine curve
+                    float decayProgress = static_cast<float>(decayCounter) / static_cast<float>(decaySamples);
+                    // Smooth cosine decay: starts at 1.0, ends at sustainLevel
+                    float decayCurve = 0.5f * (1.0f + std::cos(decayProgress * 3.14159265f)); // 1.0 to 0.0
+                    envelopeValue = sustainLevel + (1.0f - sustainLevel) * decayCurve; // Map to 1.0 to sustainLevel
+                    decayCounter++;
+                } else {
+                    // Sustain phase: hold at sustain level
+                    envelopeValue = sustainLevel;
+                }
+            }
+            
+                // Use ADSR envelope (already smoothed in calculation above)
+                float testEnvelopeValue = envelopeValue;
+            
+                // Final bounds check (defensive) - use cubic Hermite interpolation
+            float sample = 0.0f;
+                if (index0 >= 0 && index0 < len && index1 >= 0 && index1 < len) {
+                float fraction = static_cast<float>(playhead - static_cast<double>(index0));
+                fraction = std::max(0.0f, std::min(1.0f, fraction));
+                    
+                    // TEMPORARY: Use linear interpolation to test if cubic is causing crackling
+                    // Cubic Hermite interpolation (4-point)
+                    // int idx0 = index0 - 1;
+                    // int idx1 = index0;
+                    // int idx2 = index1;
+                    // int idx3 = index1 + 1;
+                    // 
+                    // // Clamp indices to valid range
+                    // idx0 = std::max(0, std::min(len - 1, idx0));
+                    // idx1 = std::max(0, std::min(len - 1, idx1));
+                    // idx2 = std::max(0, std::min(len - 1, idx2));
+                    // idx3 = std::max(0, std::min(len - 1, idx3));
+                    // 
+                    // float s0 = data[idx0];
+                    // float s1 = data[idx1];
+                    // float s2 = data[idx2];
+                    // float s3 = data[idx3];
+                    // sample = cubicHermite(s0, s1, s2, s3, fraction) * sampleGain;
+                    
+                    // Linear interpolation (fallback)
+                    // Ensure we're reading valid sample data
+                    if (index0 >= 0 && index0 < len && index1 >= 0 && index1 < len) {
+                        float s0 = data[index0];
+                        float s1 = data[index1];
+                        sample = (s0 * (1.0f - fraction) + s1 * fraction) * sampleGain;
                     } else {
-                        envelopeValue = sustainLevel;
+                        sample = 0.0f; // Safety: output silence if indices are invalid
                     }
                 }
                 
-                float amplitude = baseAmplitude * envelopeValue;
+                // Apply fade-in/out to prevent clicks on attack and release
+                // CRITICAL: Start fade-in at 0.0 to ensure first sample is silent
+                float fadeGain = 0.0f;
                 
-                // Final bounds check (defensive)
-                float sample = 0.0f;
-                if (index0 >= 0 && index0 < len && index1 >= 0 && index1 < len) {
-                    float fraction = static_cast<float>(playhead - static_cast<double>(index0));
-                    fraction = std::max(0.0f, std::min(1.0f, fraction));
-                    float s0 = data[index0];
-                    float s1 = data[index1];
-                    sample = (s0 * (1.0f - fraction) + s1 * fraction) * sampleGain;
+                // Fade-in on note start (smooth cosine curve) - start from 0.0
+                if (isFadingIn && fadeInCounter < fadeInSamples) {
+                    // Calculate progress: fadeInCounter starts at 0, so first sample has progress = 0, fadeGain = 0.0
+                    // Use fadeInCounter + 1 to ensure first sample (counter=0) gets a small but non-zero progress
+                    float progress = static_cast<float>(fadeInCounter + 1) / static_cast<float>(fadeInSamples);
+                    fadeGain = 0.5f * (1.0f - std::cos(progress * 3.14159265f)); // Smooth cosine fade-in (0.0 to 1.0)
+                    fadeInCounter++;
+                } else {
+                    isFadingIn = false;
+                    fadeGain = 1.0f; // Full gain after fade-in completes
+                    retriggerOldEnvelope = 0.0f; // Clear old envelope after fade-in completes
                 }
                 
-                float outputSample = sample * amplitude;
-                for (int ch = 0; ch < numChannels; ++ch) {
-                    if (output[ch] != nullptr) {
-                        output[ch][i] += outputSample;
+                // Fade-out on note release (smooth exponential curve - very smooth)
+                if (isFadingOut && fadeOutCounter < fadeOutSamples) {
+                    float progress = static_cast<float>(fadeOutCounter) / static_cast<float>(fadeOutSamples);
+                    // Exponential fade-out: very smooth, goes all the way to 0.0
+                    float fadeOutGain = std::exp(-progress * 5.0f); // Exponential fade-out (smooth to 0.0)
+                    fadeGain = std::min(fadeGain, fadeOutGain);
+                    fadeOutCounter++;
+                    
+                    // Deactivate voice only after fade-out completes
+                    if (fadeOutCounter >= fadeOutSamples) {
+                        active = false;
+                    }
+                } else if (isFadingOut && fadeOutCounter >= fadeOutSamples) {
+                    // Fade-out complete - ensure we're at 0.0
+                    fadeGain = 0.0f;
+                    active = false;
+                }
+                
+                // Clean, simple processing chain - no extra filters or processing
+                // Reduced per-voice gain to prevent polyphonic overload
+                sample *= voiceGain * 0.7f; // Reduce per-voice gain by 30% for polyphonic headroom
+                sample *= fadeGain; // Apply fade to prevent clicks (handles attack/release)
+                
+                // Apply envelope with crossfade for retriggering
+                // If retriggering (retriggerOldEnvelope > 0), crossfade old and new envelopes
+                float finalEnvelope = testEnvelopeValue;
+                if (retriggerOldEnvelope > 0.0f && isFadingIn) {
+                    // Crossfade: old envelope fades out as new envelope fades in
+                    float oldEnvelopeFade = 1.0f - fadeGain; // Fade out old envelope
+                    finalEnvelope = retriggerOldEnvelope * oldEnvelopeFade + testEnvelopeValue * fadeGain;
+                }
+                
+                float outputSample = sample * baseAmplitude * finalEnvelope;
+                
+                // Safety: NaN guard and hard clamp
+                if (!std::isfinite(outputSample)) {
+                    outputSample = 0.0f;
+                }
+                outputSample = std::max(-1.0f, std::min(1.0f, outputSample));
+                
+                // Peak measurement (atomic, lock-free)
+                float absSample = std::abs(outputSample);
+                float currentPeak = peakOut.load(std::memory_order_relaxed);
+                if (absSample > currentPeak) {
+                    peakOut.store(absSample, std::memory_order_relaxed);
+                }
+                if (absSample > 1.0f) {
+                    numClippedSamples.fetch_add(1, std::memory_order_relaxed);
+                }
+                
+            for (int ch = 0; ch < numChannels; ++ch) {
+                if (output[ch] != nullptr) {
+                    output[ch][i] += outputSample;
                     }
                 }
             }
@@ -598,7 +1088,9 @@ void SamplerVoice::process(float** output, int numChannels, int numSamples, doub
             }
         }
         
-        if (playhead >= static_cast<double>(endPoint) && inRelease && releaseCounter >= releaseSamples) {
+        // Only deactivate after both release envelope AND fade-out complete
+        if (playhead >= static_cast<double>(endPoint) && inRelease && releaseCounter >= releaseSamples && 
+            (!isFadingOut || fadeOutCounter >= fadeOutSamples)) {
             active = false;
         }
     }
@@ -617,6 +1109,43 @@ void SamplerVoice::getDebugInfo(int& actualInN, int& outN, int& primeRemaining, 
     outN = lastOutN;
     primeRemaining = lastPrimeRemaining;
     nonZeroCount = lastNonZeroCount;
+}
+
+// Cubic Hermite interpolation (4-point)
+float SamplerVoice::cubicHermite(float y0, float y1, float y2, float y3, float t) {
+    // Clamp t to [0, 1]
+    t = std::max(0.0f, std::min(1.0f, t));
+    
+    // Hermite basis functions
+    float t2 = t * t;
+    float t3 = t2 * t;
+    
+    float h00 = 2.0f * t3 - 3.0f * t2 + 1.0f;
+    float h10 = t3 - 2.0f * t2 + t;
+    float h01 = -2.0f * t3 + 3.0f * t2;
+    float h11 = t3 - t2;
+    
+    // Tangents (finite differences)
+    float m0 = 0.5f * (y2 - y0);
+    float m1 = 0.5f * (y3 - y1);
+    
+    return h00 * y1 + h10 * m0 + h01 * y2 + h11 * m1;
+}
+
+void SamplerVoice::updateAntiAliasFilter(float pitchRatio) {
+    // Only apply anti-aliasing when pitching up
+    if (pitchRatio > 1.0f) {
+        // Cutoff scaled down when pitching up
+        float cutoff = 0.45f / pitchRatio; // relative to Nyquist
+        cutoff = std::max(0.05f, std::min(0.45f, cutoff));
+        
+        // One-pole coefficient
+        float x = std::exp(-2.0f * 3.14159265f * (cutoff * 0.5f));
+        antiAliasAlpha = 1.0f - x;
+    } else {
+        // No filtering when pitching down or at unity
+        antiAliasAlpha = 1.0f; // Pass through
+    }
 }
 
 } // namespace Core

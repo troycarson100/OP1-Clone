@@ -80,6 +80,9 @@ public:
     void setLoopEnabled(bool enabled);
     void setLoopPoints(int startPoint, int endPoint);
     
+    // Enable/disable filter and effects processing
+    void setFilterEffectsEnabled(bool enabled);
+    
     // Get MIDI input handler (for device management and UI)
     MidiInputHandler& getMidiInputHandler() { return midiInputHandler; }
     

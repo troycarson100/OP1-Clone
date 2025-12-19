@@ -81,6 +81,9 @@ public:
     void setLoopEnabled(bool enabled);
     void setLoopPoints(int startPoint, int endPoint);
     
+    // Enable/disable filter and effects processing
+    void setFilterEffectsEnabled(bool enabled);
+    
 private:
     Core::SamplerEngine engine;
     

@@ -1,9 +1,11 @@
 #include "SamplerEngine.h"
+#include "LockFreeMidiQueue.h"
 #include <algorithm>
 #include <fstream>
 #include <chrono>
 #include <vector>
 #include <atomic>  // For atomic_load_explicit/atomic_store_explicit on shared_ptr
+#include <cmath>   // For std::isfinite
 
 namespace Core {
 
@@ -12,7 +14,7 @@ SamplerEngine::SamplerEngine()
     , currentBlockSize(512)
     , currentNumChannels(2)
     , targetGain(1.0f)
-    , filterCutoffHz(1000.0f)
+    , filterCutoffHz(20000.0f)  // Start fully open (no filtering)
     , filterResonance(1.0f)
     , filterEnvAmount(0.0f)
     , filterDriveDb(0.0f)
@@ -20,6 +22,7 @@ SamplerEngine::SamplerEngine()
     , loopEnvReleaseMs(100.0f)
     , lofiAmount(0.0f)
     , isPolyphonic(true)
+    , filterEffectsEnabled(true)  // Enabled by default
     , tempBuffer(nullptr)
     , activeVoiceCount(0)
     , currentSample_(nullptr)
@@ -47,7 +50,8 @@ void SamplerEngine::prepare(double sampleRate, int blockSize, int numChannels) {
     lofi.prepare(sampleRate);
     
     // Set filter parameters (now that it's prepared)
-    filter.setCutoff(filterCutoffHz);
+    // Initialize filter to fully open (20kHz) so it doesn't cut signal
+    filter.setCutoff(20000.0f);
     filter.setResonance(filterResonance);
     
     // Set envelope parameters (now that it's prepared) (DEPRECATED - kept for future use)
@@ -94,29 +98,20 @@ void SamplerEngine::setTimeWarpEnabled(bool enabled) {
     voiceManager.setWarpEnabled(enabled);
 }
 
+bool SamplerEngine::pushMidiEvent(const MidiEvent& event) {
+    // Push event to lock-free queue (UI/MIDI thread)
+    return midiQueue.push(event);
+}
+
 void SamplerEngine::handleMidi(const MidiEvent* events, int count) {
-    int previousActiveCount = activeVoiceCount;
-    
-    // Get current sample data snapshot (atomic, lock-free)
-    SampleDataPtr currentSample = getSampleData();
-    
-    // Safety check: only process MIDI if we have valid sample data
-    // If no sample is loaded, voices will remain inactive
-    if (!currentSample || currentSample->length <= 0 || currentSample->mono.empty()) {
-        // No valid sample - skip MIDI processing (voices will remain inactive)
-        return;
-    }
-    
+    // DEPRECATED: Push events to queue instead of processing directly
+    // This maintains backward compatibility but routes through queue
     for (int i = 0; i < count; ++i) {
-        const MidiEvent& event = events[i];
-        
-        if (event.type == MidiEvent::NoteOn) {
-            // Pass sample data snapshot to voice on noteOn
-            voiceManager.noteOn(event.note, event.velocity, currentSample);
-        } else if (event.type == MidiEvent::NoteOff) {
-            voiceManager.noteOff(event.note);
-        }
+        pushMidiEvent(events[i]);
     }
+    
+    // Legacy code kept for reference but now uses queue:
+    int previousActiveCount = activeVoiceCount;
     
     // Update active voice count and trigger/release envelope
     updateActiveVoiceCount();
@@ -137,6 +132,35 @@ void SamplerEngine::process(float** output, int numChannels, int numSamples) {
     if (output == nullptr || numChannels <= 0 || numSamples <= 0) {
         return;
     }
+    
+    // Reset instrumentation for this block
+    voicesStartedThisBlock.store(0, std::memory_order_relaxed);
+    voicesStolenThisBlock.store(0, std::memory_order_relaxed);
+    
+    // Process MIDI events from lock-free queue (audio thread only)
+    MidiEvent event;
+    int voicesStarted = 0;
+    int voicesStolen = 0;
+    SampleDataPtr currentSample = getSampleData();
+    
+    while (midiQueue.pop(event)) {
+        if (event.type == MidiEvent::NoteOn && currentSample && currentSample->length > 0) {
+            bool wasStolen = false;
+            // Pass 0 as startDelayOffset - VoiceManager will calculate the delay based on voicesStartedThisBlock
+            bool started = voiceManager.noteOn(event.note, event.velocity, currentSample, wasStolen, 0);
+            if (started) {
+                voicesStarted++;
+                if (wasStolen) {
+                    voicesStolen++;
+                }
+            }
+        } else if (event.type == MidiEvent::NoteOff) {
+            voiceManager.noteOff(event.note);
+        }
+    }
+    
+    voicesStartedThisBlock.store(voicesStarted, std::memory_order_release);
+    voicesStolenThisBlock.store(voicesStolen, std::memory_order_release);
     
     // Clear output buffer
     for (int ch = 0; ch < numChannels; ++ch) {
@@ -164,28 +188,73 @@ void SamplerEngine::process(float** output, int numChannels, int numSamples) {
     // pointers without locking.
     voiceManager.process(output, numChannels, numSamples, currentSampleRate);
     
-    // Soft limit the mixed output to prevent crackling from clipping
-    // This prevents hard clipping that causes crackling when multiple voices play
-    // Use a more aggressive soft limiter with tanh for smooth limiting
-    // Also apply dynamic gain reduction based on number of active voices
+    // Update active voices count
     int activeVoices = voiceManager.getActiveVoiceCount();
+    activeVoicesCount.store(activeVoices, std::memory_order_release);
+    
+    // Master gain - balanced for good volume without clipping
+    const float masterGain = 2.0f; // Increased to compensate for voice gain reduction
+    
+    // First pass: apply master gain, voice gain reduction, detect peak, and count clipped samples
+    float peak = 0.0f;
+    int clipped = 0;
     float voiceGainReduction = 1.0f;
-    if (activeVoices > 4) {
-        // Reduce gain when more than 4 voices are active
-        // At 8 voices: 0.7x, at 16 voices: 0.5x
-        voiceGainReduction = 1.0f - ((activeVoices - 4) * 0.05f);
-        voiceGainReduction = std::max(0.5f, voiceGainReduction);
+    // Apply voice gain reduction when multiple voices are active to prevent overload
+    // Start reducing when 3+ voices are playing (less aggressive)
+    if (activeVoices > 2) {
+        // Less aggressive reduction: 3 voices = 0.75, 4 voices = 0.67, 5 voices = 0.6, 6 voices = 0.55
+        voiceGainReduction = 1.0f / (1.0f + (activeVoices - 2) * 0.15f);
+        // Cap minimum reduction to prevent voices from becoming too quiet
+        voiceGainReduction = std::max(0.4f, voiceGainReduction); // Don't reduce below 40%
     }
     
     for (int ch = 0; ch < numChannels; ++ch) {
         if (output[ch] != nullptr) {
             for (int i = 0; i < numSamples; ++i) {
-                float sample = output[ch][i] * voiceGainReduction;
-                // Use tanh for smooth, natural-sounding soft limiting
-                // This prevents hard clipping while maintaining dynamics
-                // More aggressive limiting: scale input more to prevent overflow
-                sample = std::tanh(sample * 0.6f) * 0.9f; // More aggressive scaling (was 0.8f * 0.95f)
-                // Hard safety clamp to prevent any sample from exceeding ±1.0 (prevents glitches)
+                float sample = output[ch][i] * masterGain * voiceGainReduction;
+                output[ch][i] = sample; // Store for second pass
+                
+                // Check for clipping
+                float absSample = std::abs(sample);
+                if (absSample > 1.0f) {
+                    clipped++;
+                }
+                if (absSample > peak) {
+                    peak = absSample;
+                }
+            }
+        }
+    }
+    
+    // Update instrumentation
+    blockPeak.store(peak, std::memory_order_release);
+    clippedSamples.store(clipped, std::memory_order_release);
+    
+    // Second pass: apply aggressive limiting with smooth attack/release to prevent clicks
+    static float limiterGain = 1.0f;
+    const float attackCoeff = 0.95f; // Faster attack (5% per sample) for more responsive limiting
+    const float releaseCoeff = 0.998f; // Faster release (0.2% per sample) for better responsiveness
+    
+    // More aggressive peak-based limiting - kick in earlier (above 0.85) to prevent any clipping
+    if (peak > 0.85f) {
+        float targetGain = 0.85f / peak; // Target 0.85 instead of 0.95 for more headroom
+        // Faster attack for more responsive limiting
+        limiterGain = limiterGain * attackCoeff + targetGain * (1.0f - attackCoeff);
+    } else {
+        // Faster release - approach 1.0 more quickly
+        limiterGain = limiterGain * releaseCoeff + (1.0f - releaseCoeff);
+        limiterGain = std::min(1.0f, limiterGain);
+    }
+    
+    for (int ch = 0; ch < numChannels; ++ch) {
+        if (output[ch] != nullptr) {
+            for (int i = 0; i < numSamples; ++i) {
+                float sample = output[ch][i] * limiterGain;
+                
+                // Hard safety clamp only - no tanh distortion
+                if (!std::isfinite(sample)) {
+                    sample = 0.0f;
+                }
                 sample = std::max(-1.0f, std::min(1.0f, sample));
                 output[ch][i] = sample;
             }
@@ -207,7 +276,8 @@ void SamplerEngine::process(float** output, int numChannels, int numSamples) {
     }
     // #endregion
     
-    if (numChannels > 0 && output[0] != nullptr && currentSampleRate > 0.0 && tempBuffer != nullptr) {
+    // Apply filter and effects only if enabled
+    if (filterEffectsEnabled && numChannels > 0 && output[0] != nullptr && currentSampleRate > 0.0 && tempBuffer != nullptr) {
         // Process first channel (mono filter for now, can be extended to stereo)
         float* channelData = output[0];
         
@@ -286,6 +356,15 @@ void SamplerEngine::process(float** output, int numChannels, int numSamples) {
         for (int ch = 1; ch < numChannels; ++ch) {
             if (output[ch] != nullptr) {
                 std::copy(channelData, channelData + numSamples, output[ch]);
+            }
+        }
+    } else {
+        // Filter/effects disabled - just copy first channel to other channels without processing
+        if (numChannels > 0 && output[0] != nullptr) {
+            for (int ch = 1; ch < numChannels; ++ch) {
+                if (output[ch] != nullptr) {
+                    std::copy(output[0], output[0] + numSamples, output[ch]);
+                }
             }
         }
     }
@@ -401,6 +480,10 @@ void SamplerEngine::setLoopPoints(int startPoint, int endPoint) {
     voiceManager.setLoopPoints(startPoint, endPoint);
 }
 
+void SamplerEngine::setFilterEffectsEnabled(bool enabled) {
+    filterEffectsEnabled = enabled;
+}
+
 void SamplerEngine::updateLofiParameters() {
     // Map lofiAmount (0-1) to bit depth (16 bits to 1 bit) and sample rate reduction (1.0 to 0.1)
     // At 0.0: 16 bits, 1.0 sample rate (no lofi)
@@ -426,6 +509,10 @@ void SamplerEngine::setLoopEnvRelease(float releaseMs) {
     if (currentSampleRate > 0.0) {
         modEnv.setRelease(loopEnvReleaseMs);
     }
+}
+
+void SamplerEngine::setSineTestEnabled(bool enabled) {
+    voiceManager.setSineTestEnabled(enabled);
 }
 
 } // namespace Core

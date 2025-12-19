@@ -9,6 +9,7 @@ VoiceManager::VoiceManager()
     : nextVoiceIndex(0)
     , isPolyphonicMode(true)
 {
+    voicesStartedThisBlock = 0;
 }
 
 VoiceManager::~VoiceManager() {
@@ -45,19 +46,52 @@ int VoiceManager::allocateVoice() {
         }
     }
     
-    // All voices active - steal the oldest (round-robin)
-    // This ensures we can always play a new note, even if all voices are in use
-    int stolen = nextVoiceIndex;
-    nextVoiceIndex = (nextVoiceIndex + 1) % MAX_VOICES;
-    return stolen;
+    // All voices active - try to find a voice in release phase to steal (less disruptive)
+    for (int i = 0; i < MAX_VOICES; ++i) {
+        int idx = (nextVoiceIndex + i) % MAX_VOICES;
+        if (voices[idx].isInRelease()) {
+            // Steal this voice that's already releasing
+            nextVoiceIndex = (idx + 1) % MAX_VOICES;
+            return idx;
+        }
+    }
+    
+    // No voices in release - steal the quietest voice (lowest envelope value)
+    // This minimizes audible artifacts when stealing
+    int quietestIdx = -1;
+    float quietestEnvelope = 1.0f;
+    
+    for (int i = 0; i < MAX_VOICES; ++i) {
+        int idx = (nextVoiceIndex + i) % MAX_VOICES;
+        float env = voices[idx].getEnvelopeValue();
+        if (env < quietestEnvelope) {
+            quietestIdx = idx;
+            quietestEnvelope = env;
+        }
+    }
+    
+    if (quietestIdx == -1) {
+        quietestIdx = nextVoiceIndex;
+    }
+    
+    // Start fade-out on stolen voice (don't hard-cut)
+    voices[quietestIdx].startStealFadeOut();
+    nextVoiceIndex = (quietestIdx + 1) % MAX_VOICES;
+    return quietestIdx;
 }
 
 void VoiceManager::noteOn(int note, float velocity) {
-    // Legacy method - call with nullptr sample data (voice will use old method)
-    noteOn(note, velocity, nullptr);
+    // Legacy method - call with nullptr sample data and dummy wasStolen
+    bool dummy;
+    noteOn(note, velocity, nullptr, dummy);
 }
 
-void VoiceManager::noteOn(int note, float velocity, SampleDataPtr sampleData) {
+bool VoiceManager::noteOn(int note, float velocity, SampleDataPtr sampleData, bool& wasStolen) {
+    // Call overloaded version with start delay offset
+    return noteOn(note, velocity, sampleData, wasStolen, 0);
+}
+
+bool VoiceManager::noteOn(int note, float velocity, SampleDataPtr sampleData, bool& wasStolen, int startDelayOffset) {
     // In mono mode, turn off all currently playing voices
     if (!isPolyphonicMode) {
         for (auto& voice : voices) {
@@ -67,7 +101,25 @@ void VoiceManager::noteOn(int note, float velocity, SampleDataPtr sampleData) {
         }
     }
     
+    // CRITICAL: Check if there's already a voice playing this exact note
+    // If so, retrigger that voice smoothly instead of allocating a new one
+    // This prevents glitchy sounds from rapid retriggering
+    for (int i = 0; i < MAX_VOICES; ++i) {
+        if (voices[i].isPlaying() && voices[i].getCurrentNote() == note) {
+            // Found a voice playing this note - retrigger it smoothly
+            voices[i].setSampleData(sampleData);
+            voices[i].noteOn(note, velocity, startDelayOffset);
+            wasStolen = false; // Not stolen, just retriggered
+            return true;
+        }
+    }
+    
+    // No voice playing this note - allocate a new voice
     int voiceIndex = allocateVoice();
+    wasStolen = voices[voiceIndex].isActive() || voices[voiceIndex].isPlaying();
+    
+    // Increment voice start counter for this block
+    voicesStartedThisBlock++;
     
     // #region agent log
     {
@@ -91,12 +143,15 @@ void VoiceManager::noteOn(int note, float velocity, SampleDataPtr sampleData) {
             }
         }
         // #endregion
-        return; // Don't trigger note if no valid sample
+        return false; // Don't trigger note if no valid sample
     }
     
     voices[voiceIndex].setSampleData(sampleData);
     
-    voices[voiceIndex].noteOn(note, velocity);
+    // Calculate start delay: stagger voices within the block
+    int calculatedDelay = (voicesStartedThisBlock * 8) % 64;
+    voices[voiceIndex].noteOn(note, velocity, calculatedDelay + startDelayOffset);
+    return true;
 }
 
 void VoiceManager::noteOff(int note) {
@@ -111,6 +166,8 @@ void VoiceManager::noteOff(int note) {
 }
 
 void VoiceManager::process(float** output, int numChannels, int numSamples, double sampleRate) {
+    // Reset voice start counter at the beginning of each audio block
+    voicesStartedThisBlock = 0;
     // Process all playing voices (including those in release)
     for (auto& voice : voices) {
         if (voice.isPlaying()) {

@@ -2,6 +2,7 @@
 
 #include "VoiceManager.h"
 #include "MidiEvent.h"
+#include "LockFreeMidiQueue.h"
 #include "LinearSmoother.h"
 #include "MoogLadderFilter.h"
 #include "EnvelopeGenerator.h"
@@ -42,8 +43,11 @@ public:
     // Enable or disable time-warp processing on all voices
     void setTimeWarpEnabled(bool enabled);
     
-    // Handle MIDI events (called from wrapper)
+    // Handle MIDI events (called from wrapper) - DEPRECATED, use pushMidiEvent instead
     void handleMidi(const MidiEvent* events, int count);
+    
+    // Push MIDI event from UI/MIDI thread (non-blocking, lock-free)
+    bool pushMidiEvent(const MidiEvent& event);
     
     // Process audio block
     // output: non-interleaved buffer [channel][sample]
@@ -70,6 +74,9 @@ public:
     // Get debug info (for UI display)
     void getDebugInfo(int& actualInN, int& outN, int& primeRemaining, int& nonZeroCount) const;
     
+    // DEBUG: Enable/disable sine test mode on all voices
+    void setSineTestEnabled(bool enabled);
+    
     // Set LP filter parameters
     void setLPFilterCutoff(float cutoffHz);
     void setLPFilterResonance(float resonance);
@@ -90,11 +97,22 @@ public:
     void setLoopEnabled(bool enabled);
     void setLoopPoints(int startPoint, int endPoint);
     
+    // Enable/disable filter and effects processing (for testing/debugging)
+    void setFilterEffectsEnabled(bool enabled);
+    
     // Get playhead position (for UI display)
     double getPlayheadPosition() const;
     
     // Get envelope value (for UI fade out)
     float getEnvelopeValue() const;
+    
+    // Get instrumentation metrics (thread-safe, atomic reads)
+    float getBlockPeak() const { return blockPeak.load(std::memory_order_acquire); }
+    int getClippedSamples() const { return clippedSamples.load(std::memory_order_acquire); }
+    int getActiveVoicesCount() const { return activeVoicesCount.load(std::memory_order_acquire); }
+    int getVoicesStartedThisBlock() const { return voicesStartedThisBlock.load(std::memory_order_acquire); }
+    int getVoicesStolenThisBlock() const { return voicesStolenThisBlock.load(std::memory_order_acquire); }
+    bool getXrunsOrOverruns() const { return xrunsOrOverruns.load(std::memory_order_acquire); }
     
 private:
     VoiceManager voiceManager;
@@ -127,6 +145,9 @@ private:
     // Playback mode
     bool isPolyphonic;  // true = poly, false = mono
     
+    // Filter/effects processing enabled flag (for testing/debugging)
+    bool filterEffectsEnabled;  // true = process filter/effects, false = bypass
+    
     // Temporary buffer for processing (allocated in prepare)
     float* tempBuffer;
     
@@ -137,6 +158,17 @@ private:
     // UI thread writes via atomic_store_explicit, audio thread reads via atomic_load_explicit
     // This is the standard-safe way to atomically swap shared_ptr (C++11 compatible)
     mutable SampleDataPtr currentSample_;
+    
+    // Lock-free MIDI event queue (UI thread pushes, audio thread pops)
+    LockFreeMidiQueue midiQueue;
+    
+    // Instrumentation metrics (atomic, updated in audio thread, read from UI thread)
+    mutable std::atomic<float> blockPeak{0.0f};
+    mutable std::atomic<int> clippedSamples{0};
+    mutable std::atomic<int> activeVoicesCount{0};
+    mutable std::atomic<int> voicesStartedThisBlock{0};
+    mutable std::atomic<int> voicesStolenThisBlock{0};
+    mutable std::atomic<bool> xrunsOrOverruns{false};
     
     void updateActiveVoiceCount();
     void updateLofiParameters();

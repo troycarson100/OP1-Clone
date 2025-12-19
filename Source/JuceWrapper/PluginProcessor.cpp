@@ -346,6 +346,10 @@ void Op1CloneAudioProcessor::setLoopPoints(int startPoint, int endPoint) {
     adapter.setLoopPoints(startPoint, endPoint);
 }
 
+void Op1CloneAudioProcessor::setFilterEffectsEnabled(bool enabled) {
+    adapter.setFilterEffectsEnabled(enabled);
+}
+
 void Op1CloneAudioProcessor::setLoopEnvAttack(float attackMs) {
     adapter.setLoopEnvAttack(attackMs);
 }

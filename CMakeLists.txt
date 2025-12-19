@@ -33,6 +33,7 @@ target_sources(Op1Clone PRIVATE
     Source/Core/SamplerVoice.cpp
     Source/Core/SamplerEngine.cpp
     Source/Core/VoiceManager.cpp
+    Source/Core/LockFreeMidiQueue.cpp
     Source/Core/SimplePitchShifter.cpp
     Source/Core/RingBufferF.cpp
     Source/Core/WSOLA.cpp
