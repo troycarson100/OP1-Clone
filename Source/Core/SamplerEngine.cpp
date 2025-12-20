@@ -188,38 +188,18 @@ void SamplerEngine::process(float** output, int numChannels, int numSamples) {
     // pointers without locking.
     voiceManager.process(output, numChannels, numSamples, currentSampleRate);
     
-    // Update active voices count and aggregate instrumentation
+    // Update active voices count
     int activeVoices = voiceManager.getActiveVoiceCount();
     activeVoicesCount.store(activeVoices, std::memory_order_release);
     
-    // Aggregate instrumentation from voices
-    oobGuardHits.store(voiceManager.getOobGuardHits(), std::memory_order_release);
-    nanGuardHits.store(voiceManager.getNanGuardHits(), std::memory_order_release);
-    
-    // STEP 1.7: Clipping control - default masterGain to 0.25 during debugging
-    const float masterGain = 0.25f; // Reduced for debugging to prevent clipping
-    
-    // First pass: apply master gain, voice gain reduction, detect peak, and count clipped samples
+    // First pass: detect peak and count clipped samples BEFORE any gain adjustment
     float peak = 0.0f;
     int clipped = 0;
-    float voiceGainReduction = 1.0f;
-    // Apply voice gain reduction when multiple voices are active to prevent overload
-    // Start reducing when 3+ voices are playing (less aggressive)
-    if (activeVoices > 2) {
-        // Less aggressive reduction: 3 voices = 0.75, 4 voices = 0.67, 5 voices = 0.6, 6 voices = 0.55
-        voiceGainReduction = 1.0f / (1.0f + (activeVoices - 2) * 0.15f);
-        // Cap minimum reduction to prevent voices from becoming too quiet
-        voiceGainReduction = std::max(0.4f, voiceGainReduction); // Don't reduce below 40%
-    }
     
     for (int ch = 0; ch < numChannels; ++ch) {
         if (output[ch] != nullptr) {
             for (int i = 0; i < numSamples; ++i) {
-                float sample = output[ch][i] * masterGain * voiceGainReduction;
-                output[ch][i] = sample; // Store for second pass
-                
-                // Check for clipping
-                float absSample = std::abs(sample);
+                float absSample = std::abs(output[ch][i]);
                 if (absSample > 1.0f) {
                     clipped++;
                 }
@@ -234,15 +214,15 @@ void SamplerEngine::process(float** output, int numChannels, int numSamples) {
     blockPeak.store(peak, std::memory_order_release);
     clippedSamples.store(clipped, std::memory_order_release);
     
-    // Second pass: apply aggressive limiting with smooth attack/release to prevent clicks
+    // Second pass: apply very aggressive limiting with smooth attack/release to prevent clicks
     static float limiterGain = 1.0f;
-    const float attackCoeff = 0.95f; // Faster attack (5% per sample) for more responsive limiting
-    const float releaseCoeff = 0.998f; // Faster release (0.2% per sample) for better responsiveness
+    const float attackCoeff = 0.85f; // Very fast attack (15% per sample) for immediate response
+    const float releaseCoeff = 0.995f; // Faster release (0.5% per sample) for better responsiveness
     
-    // More aggressive peak-based limiting - kick in earlier (above 0.85) to prevent any clipping
-    if (peak > 0.85f) {
-        float targetGain = 0.85f / peak; // Target 0.85 instead of 0.95 for more headroom
-        // Faster attack for more responsive limiting
+    // Very aggressive peak-based limiting - kick in earlier (above 0.6) to prevent any clipping
+    if (peak > 0.6f) {
+        float targetGain = 0.6f / peak; // Target 0.6 for maximum headroom and prevent clipping
+        // Very fast attack for immediate response
         limiterGain = limiterGain * attackCoeff + targetGain * (1.0f - attackCoeff);
     } else {
         // Faster release - approach 1.0 more quickly
@@ -255,10 +235,15 @@ void SamplerEngine::process(float** output, int numChannels, int numSamples) {
             for (int i = 0; i < numSamples; ++i) {
                 float sample = output[ch][i] * limiterGain;
                 
-                // Hard safety clamp only - no tanh distortion
+                // Soft clipping to prevent hard clipping artifacts
                 if (!std::isfinite(sample)) {
                     sample = 0.0f;
                 }
+                // Soft clip using tanh for smooth saturation
+                if (std::abs(sample) > 0.9f) {
+                    sample = std::tanh(sample * 0.7f) * 1.0f; // Soft clip above 0.9
+                }
+                // Final hard clamp as safety
                 sample = std::max(-1.0f, std::min(1.0f, sample));
                 output[ch][i] = sample;
             }
