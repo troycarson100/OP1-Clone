@@ -188,12 +188,16 @@ void SamplerEngine::process(float** output, int numChannels, int numSamples) {
     // pointers without locking.
     voiceManager.process(output, numChannels, numSamples, currentSampleRate);
     
-    // Update active voices count
+    // Update active voices count and aggregate instrumentation
     int activeVoices = voiceManager.getActiveVoiceCount();
     activeVoicesCount.store(activeVoices, std::memory_order_release);
     
-    // Master gain - balanced for good volume without clipping
-    const float masterGain = 2.0f; // Increased to compensate for voice gain reduction
+    // Aggregate instrumentation from voices
+    oobGuardHits.store(voiceManager.getOobGuardHits(), std::memory_order_release);
+    nanGuardHits.store(voiceManager.getNanGuardHits(), std::memory_order_release);
+    
+    // STEP 1.7: Clipping control - default masterGain to 0.25 during debugging
+    const float masterGain = 0.25f; // Reduced for debugging to prevent clipping
     
     // First pass: apply master gain, voice gain reduction, detect peak, and count clipped samples
     float peak = 0.0f;

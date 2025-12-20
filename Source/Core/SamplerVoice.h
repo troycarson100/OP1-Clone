@@ -57,7 +57,7 @@ public:
     void setWarpEnabled(bool enabled) { warpEnabled = enabled; }
     
     // Set time-warp playback speed (only affects time-warped samples)
-    void setTimeWarpSpeed(float speed) { timeWarpSpeed = speed; }
+    void setTimeWarpSpeed(float speed);
     
     // DEBUG: Enable sine test mode (outputs 220Hz sine instead of sample data)
     void setSineTestEnabled(bool enabled) { sineTestEnabled = enabled; }
@@ -101,6 +101,10 @@ public:
     
     // Check if in release phase (for UI fade out)
     bool isInRelease() const { return inRelease; }
+    
+    // Get instrumentation counters (for debugging)
+    int getOobGuardHits() const { return oobGuardHits.load(std::memory_order_acquire); }
+    int getNanGuardHits() const { return nanGuardHits.load(std::memory_order_acquire); }
     
 private:
     // Sample data (immutable, shared ownership)
@@ -202,6 +206,7 @@ private:
     mutable std::atomic<float> peakOut{0.0f};
     mutable std::atomic<int> numClippedSamples{0};
     mutable std::atomic<int> oobGuardHits{0}; // Out-of-bounds guard hits (debug counter)
+    mutable std::atomic<int> nanGuardHits{0}; // NaN/Inf guard hits (debug counter)
     
     // Anti-aliasing lowpass (for pitch up)
     float antiAliasState;    // One-pole lowpass state

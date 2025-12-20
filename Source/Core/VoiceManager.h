@@ -85,6 +85,10 @@ public:
     // Returns 0.0 if no active voice
     float getEnvelopeValue() const;
     
+    // Get aggregated instrumentation from all voices
+    int getOobGuardHits() const;
+    int getNanGuardHits() const;
+    
 private:
     std::array<SamplerVoice, MAX_VOICES> voices;
     int nextVoiceIndex; // For round-robin allocation

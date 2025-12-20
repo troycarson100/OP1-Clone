@@ -321,5 +321,23 @@ float VoiceManager::getEnvelopeValue() const {
     return maxEnvelope;
 }
 
+int VoiceManager::getOobGuardHits() const {
+    // Aggregate OOB guard hits from all voices
+    int total = 0;
+    for (const auto& voice : voices) {
+        total += voice.getOobGuardHits();
+    }
+    return total;
+}
+
+int VoiceManager::getNanGuardHits() const {
+    // Aggregate NaN guard hits from all voices
+    int total = 0;
+    for (const auto& voice : voices) {
+        total += voice.getNanGuardHits();
+    }
+    return total;
+}
+
 } // namespace Core
 

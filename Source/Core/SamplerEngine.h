@@ -112,6 +112,8 @@ public:
     int getActiveVoicesCount() const { return activeVoicesCount.load(std::memory_order_acquire); }
     int getVoicesStartedThisBlock() const { return voicesStartedThisBlock.load(std::memory_order_acquire); }
     int getVoicesStolenThisBlock() const { return voicesStolenThisBlock.load(std::memory_order_acquire); }
+    int getOobGuardHits() const { return oobGuardHits.load(std::memory_order_acquire); }
+    int getNanGuardHits() const { return nanGuardHits.load(std::memory_order_acquire); }
     bool getXrunsOrOverruns() const { return xrunsOrOverruns.load(std::memory_order_acquire); }
     
 private:
@@ -168,6 +170,8 @@ private:
     mutable std::atomic<int> activeVoicesCount{0};
     mutable std::atomic<int> voicesStartedThisBlock{0};
     mutable std::atomic<int> voicesStolenThisBlock{0};
+    mutable std::atomic<int> oobGuardHits{0};  // Out-of-bounds guard hits
+    mutable std::atomic<int> nanGuardHits{0};  // NaN/Inf guard hits
     mutable std::atomic<bool> xrunsOrOverruns{false};
     
     void updateActiveVoiceCount();

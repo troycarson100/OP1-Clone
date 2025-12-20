@@ -341,15 +341,11 @@ void SignalsmithTimePitch::processAccumulatedInput()
     int peeked = inputRing.peek(tempInputBuffer, processSize);
     if (peeked >= minChunkSize) {
         // For constant duration (timeRatio=1.0), use 1:1 input/output
+        // NOTE: Speed control is implemented in simple pitch path instead to avoid glitches
         const float* inputBuffers[1] = {tempInputBuffer};
         float* outputBuffers[1] = {tempOutputBuffer};
         
-        // CRITICAL FIX: The stretcher processes output sample-by-sample.
-        // With 1:1 ratio (timeRatio=1.0), it calculates: inputOffset = round(outputIndex * inputSamples / outputSamples)
-        // Since inputSamples == outputSamples, this becomes inputOffset = outputIndex.
-        // So for outputIndex N, it needs input up to position N.
-        // We're providing peeked input and requesting peeked output, which should work.
-        // The stretcher will produce output sample-by-sample as it processes, even if some are zeros initially.
+        // Always use 1:1 ratio for time-warp (pitch-only, constant duration)
         int outputRequested = peeked; // Request same amount of output as input (1:1 ratio)
         impl->stretch.process(inputBuffers, peeked, outputBuffers, outputRequested);
         
