@@ -14,7 +14,7 @@ SamplerEngine::SamplerEngine()
     , currentBlockSize(512)
     , currentNumChannels(2)
     , targetGain(1.0f)
-    , filterCutoffHz(20000.0f)  // Start fully open (no filtering)
+    , filterCutoffHz(10000.0f)  // Start at 10kHz (halfway, so filter is active)
     , filterResonance(1.0f)
     , filterEnvAmount(0.0f)
     , filterDriveDb(0.0f)
@@ -24,6 +24,7 @@ SamplerEngine::SamplerEngine()
     , isPolyphonic(true)
     , filterEffectsEnabled(true)  // Enabled by default
     , tempBuffer(nullptr)
+    , limiterGain(1.0f)
     , activeVoiceCount(0)
     , currentSample_(nullptr)
 {
@@ -38,6 +39,12 @@ void SamplerEngine::prepare(double sampleRate, int blockSize, int numChannels) {
     currentBlockSize = blockSize;
     currentNumChannels = numChannels;
     
+    // Configure slew limiter based on sample rate
+    // maxStep = 0.02f at 44.1k (tunable, scales with sample rate)
+    float slewMaxStep = 0.02f * (static_cast<float>(sampleRate) / 44100.0f);
+    mixSlewLimiter.setMaxStep(slewMaxStep);
+    mixSlewLimiter.reset();
+    
     // Reset gain smoother with current block size
     gainSmoother.setTarget(targetGain, blockSize);
     
@@ -50,16 +57,17 @@ void SamplerEngine::prepare(double sampleRate, int blockSize, int numChannels) {
     // lofi.prepare(sampleRate);  // DEPRECATED - lofi removed, replaced with speed knob
     
     // Set filter parameters (now that it's prepared)
-    // Initialize filter to fully open (20kHz) so it doesn't cut signal
-    filter.setCutoff(20000.0f);
+    // Initialize filter to 10kHz so it's active but not too restrictive
+    filter.setCutoff(10000.0f);
     filter.setResonance(filterResonance);
     
     // Set envelope parameters (now that it's prepared) (DEPRECATED - kept for future use)
     modEnv.setAttack(loopEnvAttackMs);
     modEnv.setRelease(loopEnvReleaseMs);
     
-    // Set drive (convert dB to linear gain, more aggressive mapping)
-    float driveGain = 1.0f + (filterDriveDb / 24.0f) * 3.0f; // 1.0 to 4.0
+    // Set drive (convert dB to linear gain, reduced to prevent overdrive)
+    // Reduced max drive from 1.5 to 1.2 to prevent excessive boosting
+    float driveGain = 1.0f + (filterDriveDb / 24.0f) * 0.2f; // 1.0 to 1.2 (was 1.5, originally 4.0)
     drive.setDrive(driveGain);
     
     // Set time-warp speed (default 1.0x = normal speed)
@@ -176,9 +184,24 @@ void SamplerEngine::process(float** output, int numChannels, int numSamples) {
     float currentGain = gainSmoother.getCurrentValue();
     voiceManager.setGain(currentGain);
     
+    // Calculate polyphonic gain scaling to prevent overdrive
+    // With N voices, scale each voice so N voices sum to ~0.5x total (prevents overdrive)
+    // Formula: each voice = 0.5 / N, so sum = 0.5x regardless of voice count
+    int activeVoiceCount = voiceManager.getActiveVoiceCount();
+    float polyphonicVoiceGain = 0.5f / std::max(1.0f, static_cast<float>(activeVoiceCount));
+    voiceManager.setVoiceGain(polyphonicVoiceGain);
+    
     // Advance smoother (for next block)
     for (int i = 0; i < numSamples; ++i) {
         gainSmoother.getNextValue();
+    }
+    
+    // CRITICAL: Clear output buffers at start of block
+    // Mix voices by accumulation only; do not overwrite unintentionally
+    for (int ch = 0; ch < numChannels; ++ch) {
+        if (output[ch] != nullptr) {
+            std::fill(output[ch], output[ch] + numSamples, 0.0f);
+        }
     }
     
     // Process all voices
@@ -187,6 +210,24 @@ void SamplerEngine::process(float** output, int numChannels, int numSamples) {
     // remain valid until the next setSample() call. The audio thread can safely read from these
     // pointers without locking.
     voiceManager.process(output, numChannels, numSamples, currentSampleRate);
+    
+    // Apply slew limiter to final mix (click suppressor)
+    for (int i = 0; i < numSamples; ++i) {
+        float mixL = (output[0] != nullptr) ? output[0][i] : 0.0f;
+        float mixR = (numChannels > 1 && output[1] != nullptr) ? output[1][i] : mixL;
+        
+        mixSlewLimiter.process(mixL, mixR);
+        
+        if (output[0] != nullptr) {
+            output[0][i] = mixL;
+        }
+        if (numChannels > 1 && output[1] != nullptr) {
+            output[1][i] = mixR;
+        }
+    }
+    
+    // Run pop detector on output (after slew limiting)
+    popDetector.processBlock(output, numChannels, numSamples, popEventBuffer);
     
     // Update active voices count
     int activeVoices = voiceManager.getActiveVoiceCount();
@@ -214,38 +255,72 @@ void SamplerEngine::process(float** output, int numChannels, int numSamples) {
     blockPeak.store(peak, std::memory_order_release);
     clippedSamples.store(clipped, std::memory_order_release);
     
-    // Second pass: apply very aggressive limiting with smooth attack/release to prevent clicks
-    static float limiterGain = 1.0f;
-    const float attackCoeff = 0.85f; // Very fast attack (15% per sample) for immediate response
-    const float releaseCoeff = 0.995f; // Faster release (0.5% per sample) for better responsiveness
-    
-    // Very aggressive peak-based limiting - kick in earlier (above 0.6) to prevent any clipping
-    if (peak > 0.6f) {
-        float targetGain = 0.6f / peak; // Target 0.6 for maximum headroom and prevent clipping
-        // Very fast attack for immediate response
-        limiterGain = limiterGain * attackCoeff + targetGain * (1.0f - attackCoeff);
-    } else {
-        // Faster release - approach 1.0 more quickly
-        limiterGain = limiterGain * releaseCoeff + (1.0f - releaseCoeff);
-        limiterGain = std::min(1.0f, limiterGain);
-    }
+    // Second pass: apply soft clipping first, then limiting
+    // This prevents harsh artifacts from hard clipping
+    const float softClipThreshold = 0.85f; // Start soft clipping at 85%
+    const float softClipRatio = 0.8f; // Tanh scaling factor
     
     for (int ch = 0; ch < numChannels; ++ch) {
         if (output[ch] != nullptr) {
             for (int i = 0; i < numSamples; ++i) {
-                float sample = output[ch][i] * limiterGain;
+                float sample = output[ch][i];
                 
-                // Soft clipping to prevent hard clipping artifacts
+                // Safety: NaN/Inf guard
                 if (!std::isfinite(sample)) {
                     sample = 0.0f;
                 }
-                // Soft clip using tanh for smooth saturation
-                if (std::abs(sample) > 0.9f) {
-                    sample = std::tanh(sample * 0.7f) * 1.0f; // Soft clip above 0.9
+                
+                // Apply soft clipping before limiting for smoother sound
+                float absSample = std::abs(sample);
+                if (absSample > softClipThreshold) {
+                    // Smooth tanh soft clipping - starts gentle, gets more aggressive
+                    float excess = absSample - softClipThreshold;
+                    float softClipAmount = std::tanh(excess * softClipRatio * 3.0f);
+                    float newAbs = softClipThreshold + (1.0f - softClipThreshold) * softClipAmount;
+                    sample = (sample > 0.0f ? 1.0f : -1.0f) * newAbs;
                 }
-                // Final hard clamp as safety
-                sample = std::max(-1.0f, std::min(1.0f, sample));
+                
+                // Store processed sample
                 output[ch][i] = sample;
+            }
+        }
+    }
+    
+    // Re-detect peak after soft clipping
+    float peakAfterSoftClip = 0.0f;
+    for (int ch = 0; ch < numChannels; ++ch) {
+        if (output[ch] != nullptr) {
+            for (int i = 0; i < numSamples; ++i) {
+                float absSample = std::abs(output[ch][i]);
+                if (absSample > peakAfterSoftClip) {
+                    peakAfterSoftClip = absSample;
+                }
+            }
+        }
+    }
+    
+    // Apply look-ahead style limiting with smooth attack/release
+    const float attackCoeff = 0.80f; // Fast attack (20% per sample)
+    const float releaseCoeff = 0.998f; // Slower release for smoother recovery
+    const float limitThreshold = 0.95f; // Limit to 95% for safety margin
+    
+    if (peakAfterSoftClip > limitThreshold) {
+        float targetGain = limitThreshold / peakAfterSoftClip;
+        // Fast attack for immediate response
+        limiterGain = limiterGain * attackCoeff + targetGain * (1.0f - attackCoeff);
+    } else {
+        // Smooth release - approach 1.0 gradually
+        limiterGain = limiterGain * releaseCoeff + 1.0f * (1.0f - releaseCoeff);
+        limiterGain = std::min(1.0f, limiterGain);
+    }
+    
+    // Apply limiter gain
+    for (int ch = 0; ch < numChannels; ++ch) {
+        if (output[ch] != nullptr) {
+            for (int i = 0; i < numSamples; ++i) {
+                output[ch][i] *= limiterGain;
+                // Final hard clamp as absolute safety
+                output[ch][i] = std::max(-1.0f, std::min(1.0f, output[ch][i]));
             }
         }
     }
@@ -283,6 +358,13 @@ void SamplerEngine::process(float** output, int numChannels, int numSamples) {
         }
         
         // 1. Apply drive effect
+        // CRITICAL: Update filter parameters before processing to ensure they're current
+        // The filter cutoff/resonance might have been changed from UI thread
+        cutoffSmoother.setTarget(filterCutoffHz, numSamples);
+        float currentSmoothedCutoff = cutoffSmoother.getNextValue();
+        filter.setCutoff(currentSmoothedCutoff);
+        filter.setResonance(filterResonance);
+        
         drive.processBlock(channelData, tempBuffer, numSamples);
         
         // 2. Process envelope (for modulation) - only if envelope is prepared
@@ -328,6 +410,13 @@ void SamplerEngine::process(float** output, int numChannels, int numSamples) {
             }
         } else {
             // No envelope modulation - process entire block at once
+            // CRITICAL: Ensure filter cutoff is updated before processing
+            // The cutoff might have been changed from UI, so update it now
+            cutoffSmoother.setTarget(filterCutoffHz, numSamples);
+            float smoothedCutoff = cutoffSmoother.getNextValue();
+            filter.setCutoff(smoothedCutoff);
+            
+            // Process entire block through filter
             filter.processBlock(tempBuffer, channelData, numSamples);
             
             // Still advance envelope (even if not used)
@@ -343,6 +432,33 @@ void SamplerEngine::process(float** output, int numChannels, int numSamples) {
         for (int ch = 1; ch < numChannels; ++ch) {
             if (output[ch] != nullptr) {
                 std::copy(channelData, channelData + numSamples, output[ch]);
+            }
+        }
+        
+        // CRITICAL: Apply final limiting after filter/drive to prevent clipping
+        // Filter and drive can boost the signal, so we need to limit again
+        float finalPeak = 0.0f;
+        for (int ch = 0; ch < numChannels; ++ch) {
+            if (output[ch] != nullptr) {
+                for (int i = 0; i < numSamples; ++i) {
+                    float absSample = std::abs(output[ch][i]);
+                    if (absSample > finalPeak) {
+                        finalPeak = absSample;
+                    }
+                }
+            }
+        }
+        
+        // Apply fast limiter if needed
+        if (finalPeak > 0.95f) {
+            float finalLimiterGain = 0.95f / finalPeak;
+            for (int ch = 0; ch < numChannels; ++ch) {
+                if (output[ch] != nullptr) {
+                    for (int i = 0; i < numSamples; ++i) {
+                        output[ch][i] *= finalLimiterGain;
+                        output[ch][i] = std::max(-1.0f, std::min(1.0f, output[ch][i]));
+                    }
+                }
             }
         }
     } else {
@@ -438,10 +554,10 @@ void SamplerEngine::setLPFilterEnvAmount(float amount) {
 
 void SamplerEngine::setLPFilterDrive(float driveDb) {
     filterDriveDb = std::max(0.0f, std::min(24.0f, driveDb));
-    // Convert dB to linear gain, but make it more aggressive
+    // Convert dB to linear gain, reduced to prevent overdrive
     // At 0 dB: drive = 1.0 (no effect)
-    // At 24 dB: drive = 4.0 (strong saturation)
-    float driveGain = 1.0f + (filterDriveDb / 24.0f) * 3.0f; // 1.0 to 4.0
+    // At 24 dB: drive = 1.2 (moderate saturation, was 1.5, originally 4.0)
+    float driveGain = 1.0f + (filterDriveDb / 24.0f) * 0.2f; // 1.0 to 1.2 (was 1.5, originally 4.0)
     if (currentSampleRate > 0.0) {
         drive.setDrive(driveGain);
     }

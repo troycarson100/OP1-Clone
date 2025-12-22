@@ -48,6 +48,9 @@ public:
     // Set gain for all voices
     void setGain(float gain);
     
+    // Set per-voice gain for all voices (for polyphonic scaling)
+    void setVoiceGain(float gain);
+    
     // Set ADSR envelope parameters for all voices
     void setADSR(float attackMs, float decayMs, float sustain, float releaseMs);
     

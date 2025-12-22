@@ -52,12 +52,19 @@ SamplerVoice::SamplerVoice()
     , rampSamplesRemaining(0)
     , isRamping(false)
     , isBeingStolen(false)
-    , fadeInSamples(512)
+    , fadeInSamples(128)  // microRamp duration (128 samples)
     , fadeOutSamples(4096)
     , fadeInCounter(0)
     , fadeOutCounter(0)
     , isFadingIn(false)
     , isFadingOut(false)
+    , lastVoiceSampleL(0.0f)
+    , lastVoiceSampleR(0.0f)
+    , maxVoiceDelta(0.0f)
+    , voiceId(0)
+    , voiceFlags(0)
+    , slewLastOutL(0.0f)
+    , slewLastOutR(0.0f)
     , startDelaySamples(0)
     , startDelayCounter(0)
     , antiAliasState(0.0f)
@@ -125,10 +132,10 @@ void SamplerVoice::noteOn(int note, float velocity, int startDelayOffset) {
     bool wasActive = active;
     bool wasSameNote = (wasActive && currentNote == note);
     
-    // ALWAYS reset playhead to start point for true retrigger behavior
-    // This ensures rapid key presses restart the sample from the beginning
-    playhead = static_cast<double>(startPoint); // Always start from start point
-    sampleReadPos = static_cast<double>(startPoint); // Always start from start point
+    // CRITICAL: Always reset playhead on noteOn to ensure clean retrigger
+    // The rampGain (starts at 0.0) and envelope (starts at 0.0) will handle smooth fade-in
+    playhead = static_cast<double>(startPoint);
+    sampleReadPos = static_cast<double>(startPoint);
     
     active = (sampleData_ != nullptr && sampleData_->length > 0 && !sampleData_->mono.empty());
     
@@ -144,12 +151,18 @@ void SamplerVoice::noteOn(int note, float velocity, int startDelayOffset) {
             return; // Don't start new note yet
         }
         
-        rampGain = 0.0f; // Always start from 0, even if voice was stolen
+        // CRITICAL: microRamp MUST start at 0 and ramp to 1 over 128 samples
+        rampGain = 0.0f; // Always start from 0
         targetGain = 1.0f;
-        rampSamplesRemaining = 64; // Very short fade-in for rapid triggers
-        rampIncrement = 1.0f / 64.0f;
+        rampSamplesRemaining = 128; // microRamp duration (128 samples)
+        rampIncrement = 1.0f / 128.0f;
         isRamping = true;
         isBeingStolen = false;
+        
+        // Reset pop detection
+        lastVoiceSampleL = 0.0f;
+        lastVoiceSampleR = 0.0f;
+        maxVoiceDelta = 0.0f;
     }
     
     // Calculate pitch in semitones and set it (include repitch offset)
@@ -181,10 +194,12 @@ void SamplerVoice::noteOn(int note, float velocity, int startDelayOffset) {
         // If wasActive, just update pitch - no reset, no re-priming
     }
     
-    // Reset ADSR envelope - always start from 0.0 for true retrigger behavior
-    // This ensures rapid key presses always restart the envelope from the beginning
+    // CRITICAL: Always start envelope from 0.0 on noteOn to prevent jumps
+    // This ensures attack always starts from 0.0, creating smooth transitions
+    retriggerOldEnvelope = envelopeValue; // Store old value for reference, but don't use it
+    
+    // Always start attack from 0.0 (prevents discontinuities on retrigger)
     envelopeValue = 0.0f;
-    retriggerOldEnvelope = 0.0f; // No old envelope for retrigger
     attackCounter = 0;
     decayCounter = 0;
     inRelease = false;
@@ -197,10 +212,13 @@ void SamplerVoice::noteOn(int note, float velocity, int startDelayOffset) {
     peakOut.store(0.0f, std::memory_order_relaxed);
     
     // Calculate sample counts from ADSR parameters
-    // Ensure minimum attack time for smoothness (even if user sets 0ms, use at least 1ms)
-    float effectiveAttackMs = std::max(attackTimeMs, 1.0f);
+    // CRITICAL: Always use minimum attack time (even at 0ms) to prevent pops
+    // Use at least 2ms (88 samples at 44.1k) for smooth attack
+    float effectiveAttackMs = std::max(attackTimeMs, 2.0f);
     attackSamples = static_cast<int>(currentSampleRate * effectiveAttackMs / 1000.0);
     if (attackSamples < 1) attackSamples = 1;
+    // Ensure minimum of 128 samples for smooth attack (prevents pops even at 0ms setting)
+    attackSamples = std::max(attackSamples, 128);
     
     decaySamples = static_cast<int>(currentSampleRate * decayTimeMs / 1000.0);
     if (decaySamples < 1) decaySamples = 1;
@@ -279,20 +297,18 @@ void SamplerVoice::noteOff(int note) {
         releaseCounter = 0;
         // (envelopeValue will fade from releaseStartValue to 0)
         
-        // Start fade-out ramp: current rampGain -> 0 over 512 samples
-        if (currentSampleRate > 0.0) {
-            targetGain = 0.0f;
-            rampSamplesRemaining = 512;
-            rampIncrement = -rampGain / 512.0f; // Negative increment to fade out
-            isRamping = true;
-        }
+        // CRITICAL: noteOff must NOT deactivate voice immediately
+        // ampEnv release must ramp from current value to 0 (no reset)
+        // Do NOT start microRamp ramp-out for normal noteOff (only for stealing/kill)
+        // The envelope release will handle the fade-out smoothly
         
-        // Start fade-out (legacy, for compatibility)
-        // CRITICAL: Set fade-out duration to match release envelope duration
-        // This ensures the fade-out doesn't override the ADSR release envelope
+        // Start fade-out (legacy, for compatibility) - but don't interfere with envelope
         fadeOutSamples = releaseSamples; // Match release envelope duration
         isFadingOut = true;
         fadeOutCounter = 0;
+        
+        // Do NOT ramp out microRamp on normal noteOff - let envelope handle it
+        // Only ramp out microRamp for voice stealing or explicit kill
         isFadingIn = false;  // Stop fade-in if still active
         
         // CRITICAL: If we're in a loop range when release is triggered, 
@@ -312,11 +328,21 @@ void SamplerVoice::noteOff(int note) {
 
 // Start voice steal fade-out (called when voice is being stolen)
 void SamplerVoice::startStealFadeOut() {
+    // CRITICAL: Voice stealing must not overwrite state immediately
+    // Mark as stealing and ramp it out (256 samples)
+    // Only after it is silent may it be reused/reset
     isBeingStolen = true;
     targetGain = 0.0f;
     rampSamplesRemaining = 256; // Short fade-out for stealing
     rampIncrement = -rampGain / 256.0f;
     isRamping = true;
+    
+    // Also start envelope release if not already in release
+    if (!inRelease) {
+        releaseStartValue = envelopeValue;
+        inRelease = true;
+        releaseCounter = 0;
+    }
 }
 
 void SamplerVoice::process(float** output, int numChannels, int numSamples, double sampleRate) {
@@ -393,11 +419,9 @@ void SamplerVoice::process(float** output, int numChannels, int numSamples, doub
         }
     }
     
-    // Base amplitude (velocity * gain) with scaling to prevent clipping
-        // Scale per-voice more aggressively to prevent clipping when multiple voices play
-        // Use 1/(MAX_VOICES * 1.2) for extra headroom: 1 voice = 0.833, 6 voices = 0.139 each
-        // This ensures 6 voices sum to ~0.83, leaving headroom for processing
-        const float amplitudeScale = 1.0f / (static_cast<float>(6) * 1.2f); // Scale based on MAX_VOICES (6) with extra headroom
+    // Base amplitude (velocity * gain) - no scaling, let limiter handle it
+        // We'll use proper limiting instead of making it quiet
+        const float amplitudeScale = 1.0f; // Full volume - limiter will prevent clipping
     float baseAmplitude = currentVelocity * gain * amplitudeScale;
     
     if (warpEnabled) {
@@ -644,7 +668,9 @@ void SamplerVoice::process(float** output, int numChannels, int numSamples, doub
                         if (attackCounter >= attackSamples - 1) {
                             attackCurve = 1.0f;
                         }
-                        envelopeValue = attackCurve; // Ramp from 0.0 to 1.0
+                        // Map from releaseStartValue to 1.0 (smooth transition from current value)
+                        // Always attack from 0.0 to 1.0 (releaseStartValue is always 0.0 on noteOn)
+                        envelopeValue = attackCurve;
                     attackCounter++;
                 } else if (decayCounter < decaySamples) {
                     // Decay phase: 1.0 to sustain level with smooth cosine curve
@@ -713,52 +739,12 @@ void SamplerVoice::process(float** output, int numChannels, int numSamples, doub
                 }
             }
             
-            // Apply fade-in/out to prevent clicks on attack and release
-            // CRITICAL: Start fade-in at 0.0 to ensure first sample is silent
-            float fadeGain = 0.0f;
-            
-            // Fade-in on note start (smooth cosine curve) - start from 0.0
-            if (isFadingIn && fadeInCounter < fadeInSamples) {
-                // CRITICAL: First sample (fadeInCounter == 0) must be exactly 0.0
-                if (fadeInCounter == 0) {
-                    fadeGain = 0.0f;
-                } else {
-                    // Calculate progress for subsequent samples
-                    float progress = static_cast<float>(fadeInCounter) / static_cast<float>(fadeInSamples);
-                    fadeGain = 0.5f * (1.0f - std::cos(progress * 3.14159265f)); // Smooth cosine fade-in (0.0 to 1.0)
-                }
-                fadeInCounter++;
-            } else {
-                isFadingIn = false;
-                fadeGain = 1.0f; // Full gain after fade-in completes
-            }
-            
-            // Fade-out on note release - but let ADSR envelope handle the release curve
-            // Only use fade-out as a safety mechanism, not the primary release control
-            // The ADSR envelope (envelopeValue) is the primary release control
-            if (isFadingOut && fadeOutCounter < fadeOutSamples) {
-                // Use a very gentle fade-out that doesn't interfere with ADSR release
-                // Only apply minimal fade-out to prevent clicks, let envelopeValue do the work
-                float progress = static_cast<float>(fadeOutCounter) / static_cast<float>(fadeOutSamples);
-                // Very gentle fade - only reduces by 10% max to prevent clicks, envelopeValue handles the rest
-                float fadeOutGain = 1.0f - (progress * 0.1f); // Only 10% reduction max
-                fadeGain = std::min(fadeGain, fadeOutGain);
-                fadeOutCounter++;
-            } else if (isFadingOut && fadeOutCounter >= fadeOutSamples) {
-                // Fade-out complete - but don't deactivate, let envelope handle it
-                fadeGain = 0.9f; // Keep at 90% so envelopeValue can still control
-            }
-            
-            // Simplified gain staging: combine all gains into single multiplication
-            // TEMPORARY: Keep original gain staging to test if combined gain is causing issues
-            // Simplified gain staging: use ONLY fade-in/out for attack/release, envelope for sustain
-            // Increased per-voice gain for better volume
-            sample *= voiceGain; // Apply voice gain (no additional reduction)
-            // Apply both fade and envelope - fade prevents clicks, envelope shapes the sound
-            sample *= fadeGain; // Apply fade to prevent clicks (handles attack/release)
-            // Apply envelope - it works together with fade to shape the sound
+            // CRITICAL: Apply microRamp (rampGain) to prevent clicks on voice start
+            // rampGain starts at 0.0 and ramps to 1.0 over 128 samples
+            // Always compute output smoothly - gains will naturally be 0.0 when inactive
+            // This eliminates hard discontinuities that cause clicks
             float amplitude = baseAmplitude * testEnvelopeValue;
-            float outputSample = sample * amplitude;
+            float outputSample = sample * voiceGain * rampGain * amplitude;
             
             // Safety processing: Only NaN guard and hard clamp - no soft clip to reduce fuzziness
             if (!std::isfinite(outputSample)) {
@@ -776,9 +762,37 @@ void SamplerVoice::process(float** output, int numChannels, int numSamples, doub
                 numClippedSamples.fetch_add(1, std::memory_order_relaxed);
             }
             
+            // Apply per-voice slew limiter (click suppressor)
+            float voiceOutL = outputSample;
+            float voiceOutR = outputSample;
+            
+            // Slew limit per sample
+            float deltaL = voiceOutL - slewLastOutL;
+            float deltaR = voiceOutR - slewLastOutR;
+            const float maxStep = 0.02f;  // Slew max step (tunable)
+            
+            if (std::abs(deltaL) > maxStep) {
+                voiceOutL = slewLastOutL + (deltaL > 0.0f ? maxStep : -maxStep);
+            }
+            if (std::abs(deltaR) > maxStep) {
+                voiceOutR = slewLastOutR + (deltaR > 0.0f ? maxStep : -maxStep);
+            }
+            
+            slewLastOutL = voiceOutL;
+            slewLastOutR = voiceOutR;
+            
+            // Track per-voice pop detection (after slew limiting)
+            float deltaL_raw = std::abs(voiceOutL - lastVoiceSampleL);
+            float deltaR_raw = (numChannels > 1) ? std::abs(voiceOutR - lastVoiceSampleR) : deltaL_raw;
+            maxVoiceDelta = std::max(maxVoiceDelta, std::max(deltaL_raw, deltaR_raw));
+            
+            // Store last sample for next iteration
+            lastVoiceSampleL = voiceOutL;
+            lastVoiceSampleR = voiceOutR;
+            
             for (int ch = 0; ch < numChannels; ++ch) {
                 if (output[ch] != nullptr) {
-                    output[ch][i] += outputSample;
+                    output[ch][i] += (ch == 0) ? voiceOutL : voiceOutR;
                 }
             }
         }
@@ -795,7 +809,9 @@ void SamplerVoice::process(float** output, int numChannels, int numSamples, doub
                 }
             }
             // #endregion
-            active = false;
+            // CRITICAL: Do NOT hard deactivate - let envelope and ramp handle fade-out
+            // Only deactivate after envelope reaches 0 AND ramp is done
+            // active = false; // REMOVED - let envelope/ramp handle deactivation
         }
         
     } else {
@@ -874,8 +890,10 @@ void SamplerVoice::process(float** output, int numChannels, int numSamples, doub
                         releaseCounter++;
                     } else {
                         envelopeValue = 0.0f;
-                        active = false;
-                        break;
+                        // CRITICAL: Do NOT hard deactivate - let ramp handle fade-out
+                        // Only deactivate after rampGain reaches 0
+                        // active = false; // REMOVED - let ramp handle deactivation
+                        // break; // REMOVED - continue processing until ramp done
                     }
                     
                     // DC blocking filter (high-pass at ~10Hz)
@@ -896,46 +914,27 @@ void SamplerVoice::process(float** output, int numChannels, int numSamples, doub
                     //         }
                     //     }
                     // }
-                    // Force ramp gain to 1.0 for testing
-                    rampGain = 1.0f;
-                    
-                    // Apply fade-in/out to prevent clicks on attack and release
-                    float fadeGain = 1.0f;
-                    
-                    // Fade-in on note start (smooth cosine curve) - start from 0.0
-                    if (isFadingIn && fadeInCounter < fadeInSamples) {
-                        float progress = static_cast<float>(fadeInCounter) / static_cast<float>(fadeInSamples);
-                        fadeGain = 0.5f * (1.0f - std::cos(progress * 3.14159265f)); // Smooth cosine fade-in (0.0 to 1.0)
-                        fadeInCounter++;
-                    } else {
-                        isFadingIn = false;
-                        fadeGain = 1.0f; // Full gain after fade-in completes
+                    // Update ramp gain smoothly (0 -> 1 over 128 samples)
+                    if (isRamping && rampSamplesRemaining > 0) {
+                        rampGain += rampIncrement;
+                        rampSamplesRemaining--;
+                        if (rampSamplesRemaining <= 0) {
+                            rampGain = targetGain;
+                            isRamping = false;
+                            // CRITICAL: Only deactivate after rampGain reaches 0 AND we're being stolen
+                            if (isBeingStolen && rampGain <= 0.001f) {
+                                active = false;
+                                isBeingStolen = false;
+                            }
+                        }
                     }
                     
-                    // Fade-out on note release - but let ADSR envelope handle the release curve
-                    // Only use fade-out as a safety mechanism, not the primary release control
-                    // The ADSR envelope (envelopeValue) is the primary release control
-                    if (isFadingOut && fadeOutCounter < fadeOutSamples) {
-                        // Use a very gentle fade-out that doesn't interfere with ADSR release
-                        // Only apply minimal fade-out to prevent clicks, let envelopeValue do the work
-                        float progress = static_cast<float>(fadeOutCounter) / static_cast<float>(fadeOutSamples);
-                        // Very gentle fade - only reduces by 10% max to prevent clicks, envelopeValue handles the rest
-                        float fadeOutGain = 1.0f - (progress * 0.1f); // Only 10% reduction max
-                        fadeGain = std::min(fadeGain, fadeOutGain);
-                        fadeOutCounter++;
-                    } else if (isFadingOut && fadeOutCounter >= fadeOutSamples) {
-                        // Fade-out complete - but don't deactivate, let envelope handle it
-                        fadeGain = 0.9f; // Keep at 90% so envelopeValue can still control
-                    }
-                    
-                    // Simplified gain staging: combine all gains into single multiplication
-                    // TEMPORARY: Keep original gain staging to test if combined gain is causing issues
-                    // Apply both fade and envelope - fade prevents clicks, envelope shapes the sound
-                    sample *= voiceGain;
-                    sample *= fadeGain; // Apply fade to prevent clicks (handles attack/release)
-                    // Apply envelope - it works together with fade to shape the sound
+                    // CRITICAL: Apply microRamp (rampGain) to prevent clicks on voice start
+                    // rampGain starts at 0.0 and ramps to 1.0 over 128 samples
+                    // Always compute output smoothly - gains will naturally be 0.0 when inactive
+                    // This eliminates hard discontinuities that cause clicks
                     float amplitude = baseAmplitude * envelopeValue;
-                    float outputSample = sample * amplitude;
+                    float outputSample = sample * voiceGain * rampGain * amplitude;
                     
                     // Safety processing: Only NaN guard and hard clamp - no soft clip
                     if (!std::isfinite(outputSample)) {
@@ -955,9 +954,37 @@ void SamplerVoice::process(float** output, int numChannels, int numSamples, doub
                     
                     // Update oobGuardHits if we hit bounds (already counted above)
                     
+                    // Apply per-voice slew limiter (click suppressor)
+                    float voiceOutL = outputSample;
+                    float voiceOutR = outputSample;
+                    
+                    // Slew limit per sample
+                    float deltaL = voiceOutL - slewLastOutL;
+                    float deltaR = voiceOutR - slewLastOutR;
+                    const float maxStep = 0.02f;  // Slew max step (tunable)
+                    
+                    if (std::abs(deltaL) > maxStep) {
+                        voiceOutL = slewLastOutL + (deltaL > 0.0f ? maxStep : -maxStep);
+                    }
+                    if (std::abs(deltaR) > maxStep) {
+                        voiceOutR = slewLastOutR + (deltaR > 0.0f ? maxStep : -maxStep);
+                    }
+                    
+                    slewLastOutL = voiceOutL;
+                    slewLastOutR = voiceOutR;
+                    
+                    // Track per-voice pop detection (after slew limiting)
+                    float deltaL_raw = std::abs(voiceOutL - lastVoiceSampleL);
+                    float deltaR_raw = (numChannels > 1) ? std::abs(voiceOutR - lastVoiceSampleR) : deltaL_raw;
+                    maxVoiceDelta = std::max(maxVoiceDelta, std::max(deltaL_raw, deltaR_raw));
+                    
+                    // Store last sample for next iteration
+                    lastVoiceSampleL = voiceOutL;
+                    lastVoiceSampleR = voiceOutR;
+                    
                     for (int ch = 0; ch < numChannels; ++ch) {
                         if (output[ch] != nullptr) {
-                            output[ch][i] += outputSample;
+                            output[ch][i] += (ch == 0) ? voiceOutL : voiceOutR;
                         }
                     }
                 } else {
@@ -1019,7 +1046,9 @@ void SamplerVoice::process(float** output, int numChannels, int numSamples, doub
                         if (attackCounter >= attackSamples - 1) {
                             attackCurve = 1.0f;
                         }
-                        envelopeValue = attackCurve; // Ramp from 0.0 to 1.0
+                        // Map from releaseStartValue to 1.0 (smooth transition from current value)
+                        // Always attack from 0.0 to 1.0 (releaseStartValue is always 0.0 on noteOn)
+                        envelopeValue = attackCurve;
                     attackCounter++;
                 } else if (decayCounter < decaySamples) {
                     // Decay phase: 1.0 to sustain level with smooth cosine curve
@@ -1073,49 +1102,22 @@ void SamplerVoice::process(float** output, int numChannels, int numSamples, doub
                     }
                 }
                 
-                // Apply fade-in/out to prevent clicks on attack and release
-                // CRITICAL: Start fade-in at 0.0 to ensure first sample is silent
-                float fadeGain = 0.0f;
-                
-                // Fade-in on note start (smooth cosine curve) - start from 0.0
-                if (isFadingIn && fadeInCounter < fadeInSamples) {
-                    // Calculate progress: fadeInCounter starts at 0, so first sample has progress = 0, fadeGain = 0.0
-                    // Use fadeInCounter + 1 to ensure first sample (counter=0) gets a small but non-zero progress
-                    float progress = static_cast<float>(fadeInCounter + 1) / static_cast<float>(fadeInSamples);
-                    fadeGain = 0.5f * (1.0f - std::cos(progress * 3.14159265f)); // Smooth cosine fade-in (0.0 to 1.0)
-                    fadeInCounter++;
-                } else {
-                    isFadingIn = false;
-                    fadeGain = 1.0f; // Full gain after fade-in completes
-                    // retriggerOldEnvelope no longer used - removed for true retrigger behavior
+                // Update ramp gain smoothly (0 -> 1 over 128 samples)
+                if (isRamping && rampSamplesRemaining > 0) {
+                    rampGain += rampIncrement;
+                    rampSamplesRemaining--;
+                    if (rampSamplesRemaining <= 0) {
+                        rampGain = targetGain;
+                        isRamping = false;
+                    }
                 }
                 
-                // Fade-out on note release - but let ADSR envelope handle the release curve
-                // Only use fade-out as a safety mechanism, not the primary release control
-                // The ADSR envelope (envelopeValue) is the primary release control
-                if (isFadingOut && fadeOutCounter < fadeOutSamples) {
-                    // Use a very gentle fade-out that doesn't interfere with ADSR release
-                    // Only apply minimal fade-out to prevent clicks, let envelopeValue do the work
-                    float progress = static_cast<float>(fadeOutCounter) / static_cast<float>(fadeOutSamples);
-                    // Very gentle fade - only reduces by 10% max to prevent clicks, envelopeValue handles the rest
-                    float fadeOutGain = 1.0f - (progress * 0.1f); // Only 10% reduction max
-                    fadeGain = std::min(fadeGain, fadeOutGain);
-                    fadeOutCounter++;
-                } else if (isFadingOut && fadeOutCounter >= fadeOutSamples) {
-                    // Fade-out complete - but don't deactivate, let envelope handle it
-                    fadeGain = 0.9f; // Keep at 90% so envelopeValue can still control
-                }
-                
-                // Clean, simple processing chain - no extra filters or processing
-                // Increased per-voice gain for better volume
-                sample *= voiceGain; // Apply voice gain (no additional reduction)
-                sample *= fadeGain; // Apply fade to prevent clicks (handles attack/release)
-                
-                // Apply envelope - when retriggering same note, envelope ramps smoothly from current value
-                // No crossfade needed since playhead isn't reset, maintaining sample continuity
+                // CRITICAL: Apply microRamp (rampGain) to prevent clicks on voice start
+                // rampGain starts at 0.0 and ramps to 1.0 over 128 samples
+                // Always compute output smoothly - gains will naturally be 0.0 when inactive
+                // This eliminates hard discontinuities that cause clicks
                 float finalEnvelope = testEnvelopeValue;
-                
-                float outputSample = sample * baseAmplitude * finalEnvelope;
+                float outputSample = sample * voiceGain * rampGain * baseAmplitude * finalEnvelope;
                 
                 // Safety: NaN guard and hard clamp
                 if (!std::isfinite(outputSample)) {
@@ -1133,9 +1135,37 @@ void SamplerVoice::process(float** output, int numChannels, int numSamples, doub
                     numClippedSamples.fetch_add(1, std::memory_order_relaxed);
                 }
                 
+            // Apply per-voice slew limiter (click suppressor)
+            float voiceOutL = outputSample;
+            float voiceOutR = outputSample;
+            
+            // Slew limit per sample
+            float deltaL = voiceOutL - slewLastOutL;
+            float deltaR = voiceOutR - slewLastOutR;
+            const float maxStep = 0.02f;  // Slew max step (tunable)
+            
+            if (std::abs(deltaL) > maxStep) {
+                voiceOutL = slewLastOutL + (deltaL > 0.0f ? maxStep : -maxStep);
+            }
+            if (std::abs(deltaR) > maxStep) {
+                voiceOutR = slewLastOutR + (deltaR > 0.0f ? maxStep : -maxStep);
+            }
+            
+            slewLastOutL = voiceOutL;
+            slewLastOutR = voiceOutR;
+            
+            // Track per-voice pop detection (after slew limiting)
+            float deltaL_raw = std::abs(voiceOutL - lastVoiceSampleL);
+            float deltaR_raw = (numChannels > 1) ? std::abs(voiceOutR - lastVoiceSampleR) : deltaL_raw;
+            maxVoiceDelta = std::max(maxVoiceDelta, std::max(deltaL_raw, deltaR_raw));
+            
+            // Store last sample for next iteration
+            lastVoiceSampleL = voiceOutL;
+            lastVoiceSampleR = voiceOutR;
+            
             for (int ch = 0; ch < numChannels; ++ch) {
                 if (output[ch] != nullptr) {
-                    output[ch][i] += outputSample;
+                    output[ch][i] += (ch == 0) ? voiceOutL : voiceOutR;
                     }
                 }
             }
@@ -1148,9 +1178,10 @@ void SamplerVoice::process(float** output, int numChannels, int numSamples, doub
             }
         }
         
-        // Only deactivate after both release envelope AND fade-out complete
+        // CRITICAL: Only deactivate after both release envelope AND fade-out AND ramp complete
+        // Ensure envelope is at 0, fade-out is done, and rampGain is at 0
         if (playhead >= static_cast<double>(endPoint) && inRelease && releaseCounter >= releaseSamples && 
-            (!isFadingOut || fadeOutCounter >= fadeOutSamples)) {
+            (!isFadingOut || fadeOutCounter >= fadeOutSamples) && rampGain <= 0.001f) {
             active = false;
         }
     }
@@ -1158,6 +1189,10 @@ void SamplerVoice::process(float** output, int numChannels, int numSamples, doub
 
 void SamplerVoice::setGain(float g) {
     gain = clamp(g, 0.0f, 1.0f);
+}
+
+void SamplerVoice::setVoiceGain(float g) {
+    voiceGain = clamp(g, 0.0f, 1.0f);
 }
 
 float SamplerVoice::clamp(float value, float min, float max) {
@@ -1206,6 +1241,16 @@ void SamplerVoice::updateAntiAliasFilter(float pitchRatio) {
         // No filtering when pitching down or at unity
         antiAliasAlpha = 1.0f; // Pass through
     }
+}
+
+// Process with pop detection and slew limiting
+// NOTE: Slew limiting is already integrated in process(), this is for future per-voice pop detection
+void SamplerVoice::processWithPopDetection(float** output, int numChannels, int numSamples, double sampleRate,
+                                           PopEventRingBuffer& popBuffer, uint64_t globalFrameCounter,
+                                           float popThreshold, float slewMaxStep) {
+    // For now, just call regular process (slew limiting is already integrated in process())
+    // Full per-voice pop detection would require refactoring process() to expose intermediate values
+    process(output, numChannels, numSamples, sampleRate);
 }
 
 } // namespace Core

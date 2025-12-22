@@ -2,6 +2,7 @@
 
 #include "ITimePitch.h"
 #include "SampleData.h"
+#include "PopDetector.h"
 #include <memory>
 #include <atomic>
 #include <cmath>
@@ -50,8 +51,16 @@ public:
     // output: non-interleaved buffer [channel][sample]
     void process(float** output, int numChannels, int numSamples, double sampleRate);
     
+    // Process with pop detection and slew limiting
+    void processWithPopDetection(float** output, int numChannels, int numSamples, double sampleRate,
+                                 PopEventRingBuffer& popBuffer, uint64_t globalFrameCounter,
+                                 float popThreshold, float slewMaxStep);
+    
     // Set gain (0.0 to 1.0)
     void setGain(float gain);
+    
+    // Set per-voice gain (for polyphonic scaling)
+    void setVoiceGain(float gain);
     
     // Enable or disable time-warp processing
     void setWarpEnabled(bool enabled) { warpEnabled = enabled; }
@@ -192,6 +201,17 @@ private:
     int fadeInCounter;       // Current fade-in position
     int fadeOutCounter;      // Current fade-out position
     bool isFadingIn;         // True during fade-in
+    
+    // Pop detection per voice
+    float lastVoiceSampleL;  // Last sample produced (for discontinuity detection)
+    float lastVoiceSampleR;
+    float maxVoiceDelta;     // Max delta in current block
+    int voiceId;             // Unique voice ID for pop events
+    uint32_t voiceFlags;     // Flags for pop events (nanGuard, oobClamp, etc.)
+    
+    // Slew limiter per voice (click suppressor)
+    float slewLastOutL;
+    float slewLastOutR;
     bool isFadingOut;        // True during fade-out
     
     // Voice start delay (for staggering starts within audio block)

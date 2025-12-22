@@ -71,7 +71,7 @@ Op1CloneAudioProcessorEditor::Op1CloneAudioProcessorEditor(Op1CloneAudioProcesso
     waveformInitialized = false;
     
     // Initialize shift mode parameters
-    lpCutoffHz = 1000.0f;
+    lpCutoffHz = 10000.0f;  // Start at 10kHz so filter is active
     lpResonance = 1.0f;
     lpEnvAmount = 0.0f;  // DEPRECATED - kept for future use
     lpDriveDb = 0.0f;

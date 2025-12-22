@@ -9,6 +9,7 @@
 #include "DriveEffect.h"
 #include "LofiEffect.h"
 #include "SampleData.h"
+#include "PopDetector.h"
 #include <memory>
 #include <atomic>
 
@@ -151,6 +152,9 @@ private:
     // Temporary buffer for processing (allocated in prepare)
     float* tempBuffer;
     
+    // Limiter state (per-instance, not static)
+    float limiterGain;
+    
     // Track active voices for envelope triggering
     int activeVoiceCount;
     
@@ -169,6 +173,28 @@ private:
     mutable std::atomic<int> voicesStartedThisBlock{0};
     mutable std::atomic<int> voicesStolenThisBlock{0};
     mutable std::atomic<bool> xrunsOrOverruns{false};
+    
+    // Pop detection
+    PopDetector popDetector;
+    PopEventRingBuffer popEventBuffer;
+    
+    // Slew limiter for final mix (click suppressor)
+    SlewLimiter mixSlewLimiter;
+    
+    // Get pop events (UI thread)
+    int getPopEvents(PopEvent* out, int maxCount) {
+        return popEventBuffer.read(out, maxCount);
+    }
+    
+    // Set pop detection threshold
+    void setPopThreshold(float threshold) {
+        popDetector.setThreshold(threshold);
+    }
+    
+    // Set slew limiter max step
+    void setSlewMaxStep(float maxStep) {
+        mixSlewLimiter.setMaxStep(maxStep);
+    }
     
     void updateActiveVoiceCount();
     void updateLofiParameters();

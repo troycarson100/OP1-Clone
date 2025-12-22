@@ -189,6 +189,12 @@ void VoiceManager::setGain(float gain) {
     }
 }
 
+void VoiceManager::setVoiceGain(float gain) {
+    for (auto& voice : voices) {
+        voice.setVoiceGain(gain);
+    }
+}
+
 void VoiceManager::setADSR(float attackMs, float decayMs, float sustain, float releaseMs) {
     for (auto& voice : voices) {
         voice.setAttackTime(attackMs);

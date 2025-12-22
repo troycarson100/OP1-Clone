@@ -15,3 +15,4 @@ private:
     Op1CloneAudioProcessorEditor* editor;
 };
 
+
