@@ -41,8 +41,6 @@ public:
     // Set root note (MIDI note that plays at original pitch, default 60)
     void setRootNote(int rootNote);
     
-    // Enable or disable time-warp processing on all voices
-    void setTimeWarpEnabled(bool enabled);
     
     // Handle MIDI events (called from wrapper) - DEPRECATED, use pushMidiEvent instead
     void handleMidi(const MidiEvent* events, int count);
@@ -89,7 +87,6 @@ public:
     void setLoopEnvRelease(float releaseMs);
     
     // Set time-warp playback speed (only affects time-warped samples)
-    void setTimeWarpSpeed(float speed);  // 0.5x to 2.0x (1.0x = normal speed)
     
     // Set playback mode (mono or poly)
     void setPlaybackMode(bool polyphonic);  // true = poly, false = mono
@@ -97,6 +94,12 @@ public:
     // Set loop parameters
     void setLoopEnabled(bool enabled);
     void setLoopPoints(int startPoint, int endPoint);
+    
+    // Enable/disable time-warp processing
+    void setWarpEnabled(bool enabled);
+    
+    // Set time ratio (1.0 = constant duration, != 1.0 = time stretching)
+    void setTimeRatio(double ratio);
     
     // Enable/disable filter and effects processing (for testing/debugging)
     void setFilterEffectsEnabled(bool enabled);
@@ -140,8 +143,7 @@ private:
     float loopEnvAttackMs;
     float loopEnvReleaseMs;
     
-    // Time-warp playback speed
-    float timeWarpSpeed;  // 0.5x to 2.0x (1.0x = normal speed)
+    // timeWarpSpeed removed - fixed at 1.0 (constant duration)
     
     // Playback mode
     bool isPolyphonic;  // true = poly, false = mono

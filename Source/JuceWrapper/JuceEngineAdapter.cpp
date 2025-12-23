@@ -207,9 +207,6 @@ float JuceEngineAdapter::getSampleGain() const {
     return engine.getSampleGain();
 }
 
-void JuceEngineAdapter::setTimeWarpEnabled(bool enabled) {
-    engine.setTimeWarpEnabled(enabled);
-}
 
 float JuceEngineAdapter::getGain() const {
     return 1.0f; // Core engine doesn't expose getter, return default
@@ -270,9 +267,7 @@ void JuceEngineAdapter::setLPFilterDrive(float driveDb) {
     engine.setLPFilterDrive(driveDb);
 }
 
-void JuceEngineAdapter::setTimeWarpSpeed(float speed) {
-    engine.setTimeWarpSpeed(speed);
-}
+// Time warp speed removed - fixed at 1.0 (constant duration)
 
 void JuceEngineAdapter::setPlaybackMode(bool polyphonic) {
     engine.setPlaybackMode(polyphonic);
@@ -284,6 +279,14 @@ void JuceEngineAdapter::setLoopEnabled(bool enabled) {
 
 void JuceEngineAdapter::setLoopPoints(int startPoint, int endPoint) {
     engine.setLoopPoints(startPoint, endPoint);
+}
+
+void JuceEngineAdapter::setWarpEnabled(bool enabled) {
+    engine.setWarpEnabled(enabled);
+}
+
+void JuceEngineAdapter::setTimeRatio(double ratio) {
+    engine.setTimeRatio(ratio);
 }
 
 void JuceEngineAdapter::setFilterEffectsEnabled(bool enabled) {

@@ -28,6 +28,12 @@ target_compile_definitions(Op1Clone PRIVATE
     JUCE_USE_CUSTOM_PLUGIN_STANDALONE_APP=1
 )
 
+# Option to enable Signalsmith Stretch backend (MIT license)
+# Set to ON to use Signalsmith Stretch, OFF to use passthrough backend
+# NOTE: Signalsmith Stretch (phase vocoder) introduces artifacts for pitch-only use
+# Use passthrough backend (simple resampling) for pitch-only (time ratio = 1.0)
+option(USE_SIGNALSMITH "Enable Signalsmith Stretch for time-stretching" OFF)
+
 # Core source files (portable C++)
 target_sources(Op1Clone PRIVATE
     Source/Core/SamplerVoice.cpp
@@ -47,7 +53,9 @@ target_sources(Op1Clone PRIVATE
     Source/Core/EnvelopeGenerator.cpp
     Source/Core/DriveEffect.cpp
     Source/Core/LofiEffect.cpp
+    Source/Core/DSP/SignalsmithStretchWrapper.cpp
 )
+
 
 # JUCE wrapper source files
 target_sources(Op1Clone PRIVATE
@@ -90,6 +98,7 @@ target_sources(Op1Clone PRIVATE
 target_include_directories(Op1Clone PUBLIC
     Source
     ThirdParty
+    ThirdParty/signalsmith
     ThirdParty/signalsmith-linear
 )
 

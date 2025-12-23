@@ -173,7 +173,7 @@ void EncoderSetupManager::setupEncoder4() {
             // Map value (0.0-1.0) to speed (0.5x-2.0x)
             // value = 0.0 -> 0.5x, value = 0.5 -> 1.0x, value = 1.0 -> 2.0x
             ed->timeWarpSpeed = 0.5f + (value * 1.5f);
-            ed->audioProcessor.setTimeWarpSpeed(ed->timeWarpSpeed);
+            // Time warp speed removed - fixed at 1.0 (constant duration)
             // Update parameter display 4 (Speed)
             ed->paramDisplay4.setValue(value);
             ed->paramDisplay4.setValueText(juce::String(ed->timeWarpSpeed, 2) + "x");
@@ -193,7 +193,7 @@ void EncoderSetupManager::setupEncoder4() {
         if (ed->shiftToggleButton.getToggleState()) {
             // Shift mode: Speed default = 1.0x (value = 0.5, which maps to 1.0x)
             ed->timeWarpSpeed = 1.0f;
-            ed->audioProcessor.setTimeWarpSpeed(ed->timeWarpSpeed);
+            // Time warp speed removed - fixed at 1.0 (constant duration)
             ed->encoder4.setValue(0.5f);  // 0.5 maps to 1.0x speed
             ed->encoder4.onValueChanged(0.5f);
         } else {

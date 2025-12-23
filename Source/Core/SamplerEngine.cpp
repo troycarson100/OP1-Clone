@@ -20,7 +20,7 @@ SamplerEngine::SamplerEngine()
     , filterDriveDb(0.0f)
     , loopEnvAttackMs(10.0f)
     , loopEnvReleaseMs(100.0f)
-    , timeWarpSpeed(1.0f)  // Default to normal speed (1.0x)
+    // timeWarpSpeed removed - fixed at 1.0 (constant duration)
     , isPolyphonic(true)
     , filterEffectsEnabled(true)  // Enabled by default
     , tempBuffer(nullptr)
@@ -70,8 +70,7 @@ void SamplerEngine::prepare(double sampleRate, int blockSize, int numChannels) {
     float driveGain = 1.0f + (filterDriveDb / 24.0f) * 0.2f; // 1.0 to 1.2 (was 1.5, originally 4.0)
     drive.setDrive(driveGain);
     
-    // Set time-warp speed (default 1.0x = normal speed)
-    voiceManager.setTimeWarpSpeed(timeWarpSpeed);
+    // Time warp speed removed - fixed at 1.0 (constant duration)
     
     // Allocate temporary buffer for processing (max block size)
     delete[] tempBuffer;
@@ -102,9 +101,6 @@ void SamplerEngine::setRootNote(int rootNote) {
     voiceManager.setRootNote(rootNote);
 }
 
-void SamplerEngine::setTimeWarpEnabled(bool enabled) {
-    voiceManager.setWarpEnabled(enabled);
-}
 
 bool SamplerEngine::pushMidiEvent(const MidiEvent& event) {
     // Push event to lock-free queue (UI/MIDI thread)
@@ -563,10 +559,7 @@ void SamplerEngine::setLPFilterDrive(float driveDb) {
     }
 }
 
-void SamplerEngine::setTimeWarpSpeed(float speed) {
-    timeWarpSpeed = std::max(0.5f, std::min(2.0f, speed));
-    voiceManager.setTimeWarpSpeed(timeWarpSpeed);
-}
+// Time warp speed removed - fixed at 1.0 (constant duration)
 
 void SamplerEngine::setPlaybackMode(bool polyphonic) {
     isPolyphonic = polyphonic;
@@ -579,6 +572,14 @@ void SamplerEngine::setLoopEnabled(bool enabled) {
 
 void SamplerEngine::setLoopPoints(int startPoint, int endPoint) {
     voiceManager.setLoopPoints(startPoint, endPoint);
+}
+
+void SamplerEngine::setWarpEnabled(bool enabled) {
+    voiceManager.setWarpEnabled(enabled);
+}
+
+void SamplerEngine::setTimeRatio(double ratio) {
+    voiceManager.setTimeRatio(ratio);
 }
 
 void SamplerEngine::setFilterEffectsEnabled(bool enabled) {

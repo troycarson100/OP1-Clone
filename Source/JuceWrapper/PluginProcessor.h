@@ -71,7 +71,7 @@ public:
     void setLoopEnvRelease(float releaseMs);
     
     // Set time-warp playback speed (only affects time-warped samples)
-    void setTimeWarpSpeed(float speed);  // 0.5x to 2.0x (1.0x = normal speed)
+    // Time warp speed removed - fixed at 1.0 (constant duration)
     
     // Set playback mode (mono or poly)
     void setPlaybackMode(bool polyphonic);  // true = poly, false = mono
@@ -80,14 +80,17 @@ public:
     void setLoopEnabled(bool enabled);
     void setLoopPoints(int startPoint, int endPoint);
     
+    // Enable/disable time-warp processing
+    void setWarpEnabled(bool enabled);
+    
+    // Set time ratio (1.0 = constant duration, != 1.0 = time stretching)
+    void setTimeRatio(double ratio);
+    
     // Enable/disable filter and effects processing
     void setFilterEffectsEnabled(bool enabled);
     
     // Get MIDI input handler (for device management and UI)
     MidiInputHandler& getMidiInputHandler() { return midiInputHandler; }
-    
-    // Enable or disable time-warp processing (called from UI)
-    void setTimeWarpEnabled(bool enabled);
     
     // Set ADSR envelope parameters (called from UI)
     void setADSR(float attackMs, float decayMs, float sustain, float releaseMs);
@@ -130,9 +133,6 @@ private:
     
     // Sample loading helper
     void loadDefaultSample();
-    
-    // Time-warp enable flag (atomic, read on audio thread)
-    std::atomic<bool> timeWarpEnabled { true };
     
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(Op1CloneAudioProcessor)
 };

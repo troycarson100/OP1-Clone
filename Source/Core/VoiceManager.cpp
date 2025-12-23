@@ -29,17 +29,7 @@ void VoiceManager::setRootNote(int rootNote) {
     }
 }
 
-void VoiceManager::setWarpEnabled(bool enabled) {
-    for (auto& voice : voices) {
-        voice.setWarpEnabled(enabled);
-    }
-}
 
-void VoiceManager::setTimeWarpSpeed(float speed) {
-    for (auto& voice : voices) {
-        voice.setTimeWarpSpeed(speed);
-    }
-}
 
 int VoiceManager::allocateVoice() {
     // First, try to find a free voice (not active)
@@ -237,6 +227,18 @@ void VoiceManager::setLoopEnabled(bool enabled) {
 void VoiceManager::setLoopPoints(int startPoint, int endPoint) {
     for (auto& voice : voices) {
         voice.setLoopPoints(startPoint, endPoint);
+    }
+}
+
+void VoiceManager::setWarpEnabled(bool enabled) {
+    for (auto& voice : voices) {
+        voice.setWarpEnabled(enabled);
+    }
+}
+
+void VoiceManager::setTimeRatio(double ratio) {
+    for (auto& voice : voices) {
+        voice.setTimeRatio(ratio);
     }
 }
 

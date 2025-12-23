@@ -24,10 +24,8 @@ public:
     void setRootNote(int rootNote);
     
     // Enable or disable time-warp processing on all voices
-    void setWarpEnabled(bool enabled);
     
     // Set time-warp playback speed for all voices (only affects time-warped samples)
-    void setTimeWarpSpeed(float speed);  // 0.5x to 2.0x (1.0x = normal speed)
     
     // Handle note on - allocates a voice
     void noteOn(int note, float velocity);
@@ -64,6 +62,12 @@ public:
     void setLoopEnabled(bool enabled);
     void setLoopPoints(int startPoint, int endPoint);
     void setSineTestEnabled(bool enabled);
+    
+    // Enable/disable time-warp processing on all voices
+    void setWarpEnabled(bool enabled);
+    
+    // Set time ratio for all voices (1.0 = constant duration, != 1.0 = time stretching)
+    void setTimeRatio(double ratio);
     
     // Get sample editing parameters (from first voice)
     float getRepitch() const;

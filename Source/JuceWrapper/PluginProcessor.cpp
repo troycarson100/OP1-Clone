@@ -124,7 +124,6 @@ void Op1CloneAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     adapter.setGain(gainValue);
     
     // Update time-warp enable from atomic flag
-    adapter.setTimeWarpEnabled(timeWarpEnabled.load(std::memory_order_relaxed));
     
     // Process through adapter
     adapter.processBlock(buffer, midiMessages);
@@ -172,9 +171,6 @@ void Op1CloneAudioProcessor::loadDefaultSample() {
     adapter.setSample(testBuffer, 44100.0);
 }
 
-void Op1CloneAudioProcessor::setTimeWarpEnabled(bool enabled) {
-    timeWarpEnabled.store(enabled, std::memory_order_relaxed);
-}
 
 void Op1CloneAudioProcessor::setADSR(float attackMs, float decayMs, float sustain, float releaseMs) {
     adapter.setADSR(attackMs, decayMs, sustain, releaseMs);
@@ -330,9 +326,7 @@ void Op1CloneAudioProcessor::setLPFilterDrive(float driveDb) {
     adapter.setLPFilterDrive(driveDb);
 }
 
-void Op1CloneAudioProcessor::setTimeWarpSpeed(float speed) {
-    adapter.setTimeWarpSpeed(speed);
-}
+// Time warp speed removed - fixed at 1.0 (constant duration)
 
 void Op1CloneAudioProcessor::setPlaybackMode(bool polyphonic) {
     adapter.setPlaybackMode(polyphonic);
@@ -344,6 +338,14 @@ void Op1CloneAudioProcessor::setLoopEnabled(bool enabled) {
 
 void Op1CloneAudioProcessor::setLoopPoints(int startPoint, int endPoint) {
     adapter.setLoopPoints(startPoint, endPoint);
+}
+
+void Op1CloneAudioProcessor::setWarpEnabled(bool enabled) {
+    adapter.setWarpEnabled(enabled);
+}
+
+void Op1CloneAudioProcessor::setTimeRatio(double ratio) {
+    adapter.setTimeRatio(ratio);
 }
 
 void Op1CloneAudioProcessor::setFilterEffectsEnabled(bool enabled) {

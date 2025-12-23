@@ -154,7 +154,6 @@ Op1CloneAudioProcessorEditor::Op1CloneAudioProcessorEditor(Op1CloneAudioProcesso
     // Use Button::Listener pattern for reliable state changes
     warpToggleButton.addListener(this);
     // Also set initial state
-    audioProcessor.setTimeWarpEnabled(true);
     addAndMakeVisible(&warpToggleButton);
     
     // Shift toggle button (square, lit up when enabled, greyed out when disabled)

@@ -1,8 +1,8 @@
 #pragma once
 
-#include "ITimePitch.h"
 #include "SampleData.h"
 #include "PopDetector.h"
+#include "DSP/IWarpProcessor.h"
 #include <memory>
 #include <atomic>
 #include <cmath>
@@ -63,10 +63,10 @@ public:
     void setVoiceGain(float gain);
     
     // Enable or disable time-warp processing
-    void setWarpEnabled(bool enabled) { warpEnabled = enabled; }
+    void setWarpEnabled(bool enabled);
     
-    // Set time-warp playback speed (only affects time-warped samples)
-    void setTimeWarpSpeed(float speed) { timeWarpSpeed = speed; }
+    // Set time ratio (1.0 = constant duration, != 1.0 = time stretching)
+    void setTimeRatio(double ratio);
     
     // DEBUG: Enable sine test mode (outputs 220Hz sine instead of sample data)
     void setSineTestEnabled(bool enabled) { sineTestEnabled = enabled; }
@@ -142,20 +142,34 @@ private:
     bool inRelease;         // True when in release phase
     double currentSampleRate; // For calculating envelope times
     
-    // Time-stretching pitch processor (abstract interface)
-    std::unique_ptr<ITimePitch> timePitchProcessor;
-    
-    // Buffers for processing
-    float* inputBuffer;     // Buffer for reading from sample
-    float* outputBuffer;    // Buffer for processor output
-    int bufferSize;
-    
     // Sample read position (advances at original speed)
     double sampleReadPos;
     
-    // Enable/disable time-warp processing (when false, use simple pitch path)
+    // Time-stretching processor
+    std::unique_ptr<IWarpProcessor> warpProcessor;
     bool warpEnabled;
-    float timeWarpSpeed;  // Playback speed for time-warp (0.5x to 2.0x, 1.0x = normal)
+    double timeRatio;  // 1.0 = constant duration, != 1.0 = time stretch
+    
+    // Buffers for warp processing (planar format)
+    float** warpInputPlanar;   // [2][maxBlockSize] for feeding warp
+    float** warpOutputPlanar;  // [2][maxBlockSize] for warp output
+    int warpBufferSize;
+    
+    // Warp priming and crossfade state
+    bool warpPriming;
+    bool warpCrossfadeActive;
+    float warpCrossfadePos;     // 0.0 = dry, 1.0 = warp
+    float warpCrossfadeInc;     // Crossfade increment per sample
+    int warpCrossfadeSamples;   // Total crossfade duration in samples
+    int warpCrossfadeCounter;   // Current crossfade position
+    
+    // Gain matching state (warp vs dry reference)
+    float dryRMS;           // Running RMS of dry path (smoothed)
+    float warpRMS;          // Running RMS of warp path (smoothed)
+    float gainMatch;        // Current gain match factor (dryRMS/warpRMS)
+    float gainMatchTarget;  // Target gain match (smoothed)
+    float gainMatchAttack;  // Attack coefficient (5ms)
+    float gainMatchRelease; // Release coefficient (100ms)
     
     // DEBUG: Sine test mode (outputs 220Hz sine instead of sample data)
     bool sineTestEnabled;
@@ -222,6 +236,8 @@ private:
     mutable std::atomic<float> peakOut{0.0f};
     mutable std::atomic<int> numClippedSamples{0};
     mutable std::atomic<int> oobGuardHits{0}; // Out-of-bounds guard hits (debug counter)
+    
+    float lastLimiterGain;  // Last limiter gain for smoothing
     
     // Anti-aliasing lowpass (for pitch up)
     float antiAliasState;    // One-pole lowpass state
