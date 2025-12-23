@@ -209,12 +209,10 @@ void EncoderSetupManager::setupEncoder5() {
     ed->encoder5.onValueChanged = [ed](float value) {
         if (ed->shiftToggleButton.getToggleState()) {
             // Shift mode: Encoder 5 = Loop Start Point (0 to sampleLength)
+            // Allow loop start to be past loop end for reverse playback
             if (ed->sampleLength > 0) {
                 ed->loopStartPoint = static_cast<int>(value * static_cast<float>(ed->sampleLength));
-                // Ensure loop start is before loop end
-                if (ed->loopStartPoint >= ed->loopEndPoint) {
-                    ed->loopStartPoint = std::max(0, ed->loopEndPoint - 1);
-                }
+                // No constraint - allow loop start to be past loop end for reverse playback
                 // Send to processor
                 ed->audioProcessor.setLoopPoints(ed->loopStartPoint, ed->loopEndPoint);
                 // Update waveform visualization to show loop markers
@@ -305,12 +303,10 @@ void EncoderSetupManager::setupEncoder6() {
     ed->encoder6.onValueChanged = [ed](float value) {
         if (ed->shiftToggleButton.getToggleState()) {
             // Shift mode: Encoder 6 = Loop End Point (0 to sampleLength)
+            // Allow loop end to be before loop start for reverse playback
             if (ed->sampleLength > 0) {
                 ed->loopEndPoint = static_cast<int>(value * static_cast<float>(ed->sampleLength));
-                // Ensure loop end is after loop start
-                if (ed->loopEndPoint <= ed->loopStartPoint) {
-                    ed->loopEndPoint = std::min(ed->sampleLength, ed->loopStartPoint + 1);
-                }
+                // No constraint - allow loop end to be before loop start for reverse playback
                 // Send to processor
                 ed->audioProcessor.setLoopPoints(ed->loopStartPoint, ed->loopEndPoint);
                 // Update waveform visualization to show loop markers

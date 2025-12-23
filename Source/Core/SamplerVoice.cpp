@@ -159,6 +159,8 @@ void SamplerVoice::noteOn(int note, float velocity, int startDelayOffset) {
     
     // CRITICAL: Always reset playhead on noteOn to ensure clean retrigger
     // The rampGain (starts at 0.0) and envelope (starts at 0.0) will handle smooth fade-in
+    // Always start at sample start, even for reverse loops
+    // Reverse loop will activate when playhead reaches loopStartPoint
     playhead = static_cast<double>(startPoint);
     sampleReadPos = static_cast<double>(startPoint);
     
@@ -276,10 +278,10 @@ void SamplerVoice::noteOn(int note, float velocity, int startDelayOffset) {
     ditherSeed = static_cast<unsigned int>(std::chrono::steady_clock::now().time_since_epoch().count()) ^ (static_cast<unsigned int>(note) << 16);
     
     // Calculate pitch ratio for anti-aliasing
-    int semitones = currentNote - rootMidiNote;
-    float totalSemitones = static_cast<float>(semitones) + repitchSemitones;
-    float pitchRatio = std::pow(2.0f, totalSemitones / 12.0f);
-    updateAntiAliasFilter(pitchRatio);
+        int semitones = currentNote - rootMidiNote;
+        float totalSemitones = static_cast<float>(semitones) + repitchSemitones;
+        float pitchRatio = std::pow(2.0f, totalSemitones / 12.0f);
+        updateAntiAliasFilter(pitchRatio);
 }
 
 void SamplerVoice::noteOff(int note) {
@@ -398,8 +400,8 @@ void SamplerVoice::process(float** output, int numChannels, int numSamples, doub
     
     // Set loop crossfade duration based on sample rate (~50ms for smooth crossfade - longer to prevent pops)
     if (sampleRate > 0.0 && loopCrossfadeSamples == 0) {
-        loopCrossfadeSamples = static_cast<int>(sampleRate * 0.05); // 50ms crossfade for smoother transitions
-        loopCrossfadeSamples = std::max(256, std::min(loopCrossfadeSamples, 4096)); // Clamp to reasonable range
+        loopCrossfadeSamples = static_cast<int>(sampleRate * 0.15); // 150ms crossfade for much smoother transitions
+        loopCrossfadeSamples = std::max(512, std::min(loopCrossfadeSamples, 8192)); // Clamp to reasonable range
     }
     
     // Prepare warp processor if needed
@@ -481,8 +483,8 @@ void SamplerVoice::process(float** output, int numChannels, int numSamples, doub
             // Read sample with linear interpolation
             float sample = 0.0f;
             if (playhead >= static_cast<double>(endPoint - 1)) {
-                int lastIdx = std::max(startPoint, endPoint - 1);
-                if (lastIdx >= 0 && lastIdx < len) {
+                    int lastIdx = std::max(startPoint, endPoint - 1);
+                    if (lastIdx >= 0 && lastIdx < len) {
                     sample = data[lastIdx] * sampleGain;
                 }
                 if (!inRelease && (!loopEnabled || playhead >= static_cast<double>(loopEndPoint))) {
@@ -606,11 +608,11 @@ void SamplerVoice::process(float** output, int numChannels, int numSamples, doub
                 }
             } else {
                 if (attackCounter < attackSamples) {
-                    float attackProgress = static_cast<float>(attackCounter) / static_cast<float>(attackSamples);
+                        float attackProgress = static_cast<float>(attackCounter) / static_cast<float>(attackSamples);
                     float attackCurve = 1.0f - std::exp(-attackProgress * 5.0f);
-                    if (attackCounter >= attackSamples - 1) {
-                        attackCurve = 1.0f;
-                    }
+                        if (attackCounter >= attackSamples - 1) {
+                            attackCurve = 1.0f;
+                        }
                     envelopeValue = attackCurve;
                     attackCounter++;
                 } else if (decayCounter < decaySamples) {
@@ -711,10 +713,28 @@ void SamplerVoice::process(float** output, int numChannels, int numSamples, doub
             
             // CRITICAL: Check if we're in release BEFORE checking loop - if so, don't loop
             // This ensures that when note is released, looping stops immediately
-            bool shouldLoop = loopEnabled && !inRelease && loopEndPoint > loopStartPoint;
+            // Support reverse playback: if loopStartPoint > loopEndPoint, play in reverse
+            // Reverse loop only activates when playhead reaches loopStartPoint
+            bool isReverseLoop = loopEnabled && loopStartPoint > loopEndPoint;
+            // For reverse loops, we're in the loop region when playhead is between loopEndPoint and loopStartPoint
+            // (going backwards from loopStartPoint to loopEndPoint)
+            bool inReverseLoopRegion = isReverseLoop && playhead >= static_cast<double>(loopEndPoint) && playhead <= static_cast<double>(loopStartPoint);
+            bool shouldLoop = loopEnabled && !inRelease && 
+                             ((loopEndPoint > loopStartPoint && playhead >= static_cast<double>(loopStartPoint) && playhead < static_cast<double>(loopEndPoint)) ||
+                              (isReverseLoop && inReverseLoopRegion));
             
             // Calculate distance from loop end point (for crossfade)
-            double distanceFromLoopEnd = static_cast<double>(loopEndPoint) - playhead;
+            // For reverse loops, we need to check distance from loop end point (when going backwards)
+            double distanceFromLoopEnd;
+            if (isReverseLoop && inReverseLoopRegion) {
+                // Reverse loop: check distance from loop end point (we're going backwards)
+                distanceFromLoopEnd = playhead - static_cast<double>(loopEndPoint);
+            } else if (!isReverseLoop && shouldLoop) {
+                // Forward loop: check distance from loop end point
+                distanceFromLoopEnd = static_cast<double>(loopEndPoint) - playhead;
+            } else {
+                distanceFromLoopEnd = -1.0; // Not in loop region
+            }
             bool inLoopCrossfadeRegion = shouldLoop && distanceFromLoopEnd >= 0.0 && 
                                          distanceFromLoopEnd <= static_cast<double>(loopCrossfadeSamples);
             
@@ -748,10 +768,12 @@ void SamplerVoice::process(float** output, int numChannels, int numSamples, doub
             // Handle looping: if loop is enabled and we've reached the end, loop back to start
             // CRITICAL: Never loop if in release phase - respect ADSR envelope
             // We check shouldLoop which already verified !inRelease
-            if (shouldLoop && playhead >= static_cast<double>(loopEndPoint)) {
-                // Loop back to loop start point (only if not in release)
-                // If we're in crossfade, we may have already advanced past loopEndPoint
-                // so adjust playhead to continue from loop start with crossfade
+            // Support reverse playback: when loopStartPoint > loopEndPoint, play in reverse
+            // Reverse loop is handled in the playhead update section (after decrement)
+            // Forward loop: jump back to loop start point when reaching loop end
+            // Check forward loop BEFORE playhead update to catch it at the right time
+            if (!isReverseLoop && shouldLoop && playhead >= static_cast<double>(loopEndPoint)) {
+                // Forward loop: jump back to loop start point
                 double overshoot = playhead - static_cast<double>(loopEndPoint);
                 playhead = static_cast<double>(loopStartPoint) + overshoot;
                 
@@ -831,7 +853,7 @@ void SamplerVoice::process(float** output, int numChannels, int numSamples, doub
                             isRamping = false;
                             // CRITICAL: Only deactivate after rampGain reaches 0 AND we're being stolen
                             if (isBeingStolen && rampGain <= 0.001f) {
-                                active = false;
+                            active = false;
                                 isBeingStolen = false;
                             }
                         }
@@ -935,15 +957,32 @@ void SamplerVoice::process(float** output, int numChannels, int numSamples, doub
                 float sample = sampleEnd;
                 if (loopCrossfadeActive && shouldLoop && loopStartPoint >= 0 && loopStartPoint < len) {
                     // Read sample from loop start position
-                    double loopStartPlayhead = static_cast<double>(loopStartPoint) + (playhead - static_cast<double>(loopEndPoint));
+                    // For reverse loops, calculate position differently
+                    double loopStartPlayhead;
+                    if (isReverseLoop) {
+                        // Reverse: calculate position from loop start going backwards
+                        loopStartPlayhead = static_cast<double>(loopStartPoint) - (static_cast<double>(loopEndPoint) - playhead);
+                    } else {
+                        // Forward: calculate position from loop start going forwards
+                        loopStartPlayhead = static_cast<double>(loopStartPoint) + (playhead - static_cast<double>(loopEndPoint));
+                    }
                     int loopIndex0 = static_cast<int>(loopStartPlayhead);
                     int loopIndex1 = loopIndex0 + 1;
                     
-                    // Clamp loop indices to valid range
-                    if (loopIndex0 < loopStartPoint) loopIndex0 = loopStartPoint;
-                    if (loopIndex0 >= loopEndPoint) loopIndex0 = loopEndPoint - 1;
-                    if (loopIndex1 < loopStartPoint) loopIndex1 = loopStartPoint;
-                    if (loopIndex1 >= loopEndPoint) loopIndex1 = loopEndPoint - 1;
+                    // Clamp loop indices to valid range (for reverse, start > end)
+                    if (isReverseLoop) {
+                        // Reverse loop: clamp between loopEndPoint and loopStartPoint
+                        if (loopIndex0 > loopStartPoint) loopIndex0 = loopStartPoint;
+                        if (loopIndex0 <= loopEndPoint) loopIndex0 = loopEndPoint + 1;
+                        if (loopIndex1 > loopStartPoint) loopIndex1 = loopStartPoint;
+                        if (loopIndex1 <= loopEndPoint) loopIndex1 = loopEndPoint + 1;
+                    } else {
+                        // Forward loop: clamp between loopStartPoint and loopEndPoint
+                        if (loopIndex0 < loopStartPoint) loopIndex0 = loopStartPoint;
+                        if (loopIndex0 >= loopEndPoint) loopIndex0 = loopEndPoint - 1;
+                        if (loopIndex1 < loopStartPoint) loopIndex1 = loopStartPoint;
+                        if (loopIndex1 >= loopEndPoint) loopIndex1 = loopEndPoint - 1;
+                    }
                     
                     float sampleStart = 0.0f;
                     if (loopIndex0 >= 0 && loopIndex0 < len && loopIndex1 >= 0 && loopIndex1 < len) {
@@ -1074,7 +1113,7 @@ void SamplerVoice::process(float** output, int numChannels, int numSamples, doub
             // Store last sample for next iteration
             lastVoiceSampleL = voiceOutL;
             lastVoiceSampleR = voiceOutR;
-            
+                
             for (int ch = 0; ch < numChannels; ++ch) {
                 if (output[ch] != nullptr) {
                     output[ch][i] += (ch == 0) ? voiceOutL : voiceOutR;
@@ -1082,7 +1121,29 @@ void SamplerVoice::process(float** output, int numChannels, int numSamples, doub
                 }
             }
             
-            playhead += speed;
+            // Handle reverse loop: if loopStartPoint > loopEndPoint, play in reverse
+            // Use the isReverseLoop variable already declared earlier in the function
+            // Only reverse when we're in the reverse loop region (between loopEndPoint and loopStartPoint)
+            if (isReverseLoop && inReverseLoopRegion && !inRelease) {
+                // Reverse playback: decrement playhead
+                playhead -= speed;
+                
+                // Check if we've gone past loopEndPoint and need to loop back
+                if (playhead < static_cast<double>(loopEndPoint)) {
+                    // Jump back to loopStartPoint to continue the reverse loop
+                    playhead = static_cast<double>(loopStartPoint);
+                }
+            } else {
+                // Forward playback: increment playhead
+                playhead += speed;
+                
+                // Check forward loop AFTER playhead update to catch when it goes past loopEndPoint
+                if (!isReverseLoop && shouldLoop && playhead >= static_cast<double>(loopEndPoint)) {
+                    // Forward loop: jump back to loop start point
+                    double overshoot = playhead - static_cast<double>(loopEndPoint);
+                    playhead = static_cast<double>(loopStartPoint) + overshoot;
+                }
+            }
             
             // Guard against NaN/Inf
             if (!std::isfinite(playhead)) {
