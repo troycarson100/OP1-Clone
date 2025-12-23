@@ -67,10 +67,10 @@ void SamplerEngine::prepare(double sampleRate, int blockSize, int numChannels) {
     modEnv.setAttack(loopEnvAttackMs);
     modEnv.setRelease(loopEnvReleaseMs);
     
-    // Set drive (convert dB to linear gain, reduced to prevent overdrive)
-    // Reduced max drive from 1.5 to 1.2 to prevent excessive boosting
-    float driveGain = 1.0f + (filterDriveDb / 24.0f) * 0.2f; // 1.0 to 1.2 (was 1.5, originally 4.0)
-    drive.setDrive(driveGain);
+    // Set filter drive (integrated into filter, not separate effect)
+    float driveAmount = filterDriveDb / 24.0f;  // 0.0 to 1.0 for 0-24dB range
+    driveAmount = std::max(0.0f, std::min(1.0f, driveAmount));
+    filter.setDrive(driveAmount);
     
     // Time warp speed removed - fixed at 1.0 (constant duration)
     
@@ -375,7 +375,13 @@ void SamplerEngine::process(float** output, int numChannels, int numSamples) {
         }
         filter.setResonance(filterResonance);
         
-        drive.processBlock(channelData, tempBuffer, numSamples);
+        // Set filter drive (integrated into filter, not separate processing)
+        // Convert drive from dB to linear drive amount (0.0 = clean, 1.0+ = saturated)
+        float driveAmount = filterDriveDb / 24.0f;  // 0.0 to 1.0 for 0-24dB range
+        driveAmount = std::max(0.0f, std::min(1.0f, driveAmount));
+        filter.setDrive(driveAmount);
+        
+        // No separate drive processing - drive is now integrated into the filter
         
         // 2. Process envelope (for modulation) - only if envelope is prepared
         float envValue = modEnv.getCurrentValue();
@@ -412,8 +418,8 @@ void SamplerEngine::process(float** output, int numChannels, int numSamples) {
                     samplesSinceUpdate++;
                 }
                 
-                // Process sample through filter (uses current filter coefficients)
-                channelData[i] = filter.process(tempBuffer[i]);
+                // Process sample through filter (drive is integrated, process directly from channelData)
+                channelData[i] = filter.process(channelData[i]);
                 
                 // Advance envelope
                 envValue = modEnv.process();
@@ -433,24 +439,24 @@ void SamplerEngine::process(float** output, int numChannels, int numSamples) {
             }
             float smoothedCutoff = cutoffSmoother.getNextValue();
             
-            // If filter is at maximum cutoff (20kHz), bypass filter processing
-            // to avoid any potential issues and ensure clean pass-through
-            if (smoothedCutoff >= 19900.0f) {
-                // Bypass filter - just copy drive output directly to channel
-                std::copy(tempBuffer, tempBuffer + numSamples, channelData);
-            } else {
-                // Process block - update filter cutoff only if changed significantly
-                // Don't update per-sample to avoid crackling from frequent coefficient changes
-                if (std::abs(smoothedCutoff - lastAppliedFilterCutoff) > 1.0f) {
-                    filter.setCutoff(smoothedCutoff);
-                    lastAppliedFilterCutoff = smoothedCutoff;
-                }
-                filter.processBlock(tempBuffer, channelData, numSamples);
-                
-                // Advance smoother for next block (but don't use the values for this block)
-                for (int i = 1; i < numSamples; ++i) {
-                    cutoffSmoother.getNextValue();
-                }
+            // Set filter drive (integrated into filter, not separate processing)
+            float driveAmount = filterDriveDb / 24.0f;  // 0.0 to 1.0 for 0-24dB range
+            driveAmount = std::max(0.0f, std::min(1.0f, driveAmount));
+            filter.setDrive(driveAmount);
+            
+            // Process block - update filter cutoff only if changed significantly
+            // Don't update per-sample to avoid crackling from frequent coefficient changes
+            if (std::abs(smoothedCutoff - lastAppliedFilterCutoff) > 1.0f) {
+                filter.setCutoff(smoothedCutoff);
+                lastAppliedFilterCutoff = smoothedCutoff;
+            }
+            // Process directly from channelData (drive is integrated into filter)
+            // Filter will handle bypass internally at high cutoffs
+            filter.processBlock(channelData, channelData, numSamples);
+            
+            // Advance smoother for next block (but don't use the values for this block)
+            for (int i = 1; i < numSamples; ++i) {
+                cutoffSmoother.getNextValue();
             }
             
             // Still advance envelope (even if not used)
@@ -594,12 +600,13 @@ void SamplerEngine::setLPFilterEnvAmount(float amount) {
 
 void SamplerEngine::setLPFilterDrive(float driveDb) {
     filterDriveDb = std::max(0.0f, std::min(24.0f, driveDb));
-    // Convert dB to linear gain, reduced to prevent overdrive
-    // At 0 dB: drive = 1.0 (no effect)
-    // At 24 dB: drive = 1.2 (moderate saturation, was 1.5, originally 4.0)
-    float driveGain = 1.0f + (filterDriveDb / 24.0f) * 0.2f; // 1.0 to 1.2 (was 1.5, originally 4.0)
+    
+    // Update filter drive (integrated into filter, not separate effect)
     if (currentSampleRate > 0.0) {
-        drive.setDrive(driveGain);
+        // Convert dB to linear drive amount (0.0 = clean, 1.0 = saturated at 24dB)
+        float driveAmount = filterDriveDb / 24.0f;
+        driveAmount = std::max(0.0f, std::min(1.0f, driveAmount));
+        filter.setDrive(driveAmount);
     }
 }
 

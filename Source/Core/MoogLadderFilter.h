@@ -33,6 +33,13 @@ public:
     void setResonance(float resonance);
     
     /**
+     * Set drive amount (saturation)
+     * Range: 0.0-1.0+ (0.0 = clean, 1.0+ = saturated with character)
+     * Drive is integrated into the filter for authentic Moog behavior
+     */
+    void setDrive(float drive);
+    
+    /**
      * Process a single sample
      */
     float process(float input);
@@ -51,6 +58,7 @@ private:
     double sampleRate;
     float cutoffHz;
     float resonance;
+    float drive;  // Integrated drive/saturation (0.0 = clean, 1.0+ = saturated)
     
     // Filter state (4 stages for 4-pole filter)
     float stage[4];
@@ -59,14 +67,15 @@ private:
     float delay[4];
     
     // Pre-calculated coefficients
-    float g;      // Cutoff coefficient
-    float resonanceCoeff;  // Resonance coefficient
+    float g;      // Cutoff coefficient (frequency warped)
+    float resonanceCoeff;  // Resonance coefficient (Q-based scaling)
     
     // Flag to track if filter is prepared
     bool isPrepared;
     
     void updateCoefficients();
     float tanhApprox(float x) const;
+    float saturate(float x) const;  // Drive saturation function
 };
 
 } // namespace Core
