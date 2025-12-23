@@ -122,6 +122,7 @@ private:
     VoiceManager voiceManager;
     LinearSmoother gainSmoother;
     LinearSmoother cutoffSmoother;  // Smooth cutoff changes to prevent instability
+    float lastAppliedFilterCutoff;  // Track last applied cutoff to avoid frequent updates
     double currentSampleRate;
     int currentBlockSize;
     int currentNumChannels;
@@ -135,6 +136,7 @@ private:
     
     // Filter parameters
     float filterCutoffHz;
+    float filterCutoffTarget;  // Track target for smoother (only update when changed)
     float filterResonance;
     float filterEnvAmount;  // -1.0 to 1.0 (DEPRECATED - kept for future use)
     float filterDriveDb;    // Drive in dB (0.0 to 24.0)

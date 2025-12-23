@@ -40,6 +40,11 @@ SamplerVoice::SamplerVoice()
     , loopEnabled(false)
     , loopStartPoint(0)
     , loopEndPoint(0)
+    , loopCrossfadeActive(false)
+    , loopCrossfadeSamples(0)  // Will be set based on sample rate
+    , loopCrossfadeCounter(0)
+    , loopFadeOutGain(1.0f)
+    , loopFadeInGain(0.0f)
     , voiceGain(1.0f)  // Full voice gain for better volume
     , rampGain(0.0f)
     , targetGain(0.0f)
@@ -391,6 +396,12 @@ void SamplerVoice::process(float** output, int numChannels, int numSamples, doub
     bool sampleRateChanged = (std::abs(currentSampleRate - sampleRate) > 0.1);
     currentSampleRate = sampleRate;
     
+    // Set loop crossfade duration based on sample rate (~50ms for smooth crossfade - longer to prevent pops)
+    if (sampleRate > 0.0 && loopCrossfadeSamples == 0) {
+        loopCrossfadeSamples = static_cast<int>(sampleRate * 0.05); // 50ms crossfade for smoother transitions
+        loopCrossfadeSamples = std::max(256, std::min(loopCrossfadeSamples, 4096)); // Clamp to reasonable range
+    }
+    
     // Prepare warp processor if needed
     // When warp is enabled, use Signalsmith Stretch to maintain constant duration (timeRatio = 1.0)
     // while allowing pitch to change via setTransposeSemitones()
@@ -702,12 +713,56 @@ void SamplerVoice::process(float** output, int numChannels, int numSamples, doub
             // This ensures that when note is released, looping stops immediately
             bool shouldLoop = loopEnabled && !inRelease && loopEndPoint > loopStartPoint;
             
+            // Calculate distance from loop end point (for crossfade)
+            double distanceFromLoopEnd = static_cast<double>(loopEndPoint) - playhead;
+            bool inLoopCrossfadeRegion = shouldLoop && distanceFromLoopEnd >= 0.0 && 
+                                         distanceFromLoopEnd <= static_cast<double>(loopCrossfadeSamples);
+            
+            // Start loop crossfade when entering the crossfade region
+            if (inLoopCrossfadeRegion && !loopCrossfadeActive) {
+                loopCrossfadeActive = true;
+                loopCrossfadeCounter = 0;
+                // Calculate fade-out gain (1.0 -> 0.0) and fade-in gain (0.0 -> 1.0)
+                int samplesUntilLoopEnd = static_cast<int>(distanceFromLoopEnd);
+                loopCrossfadeCounter = loopCrossfadeSamples - samplesUntilLoopEnd;
+                loopFadeOutGain = 1.0f - (static_cast<float>(loopCrossfadeCounter) / static_cast<float>(loopCrossfadeSamples));
+                loopFadeInGain = static_cast<float>(loopCrossfadeCounter) / static_cast<float>(loopCrossfadeSamples);
+            }
+            
+            // Update loop crossfade gains
+            if (loopCrossfadeActive) {
+                loopCrossfadeCounter++;
+                if (loopCrossfadeCounter < loopCrossfadeSamples) {
+                    // Update fade gains
+                    float fadeProgress = static_cast<float>(loopCrossfadeCounter) / static_cast<float>(loopCrossfadeSamples);
+                    loopFadeOutGain = 1.0f - fadeProgress;  // Fade out from loop end
+                    loopFadeInGain = fadeProgress;          // Fade in from loop start
+                } else {
+                    // Crossfade complete
+                    loopCrossfadeActive = false;
+                    loopFadeOutGain = 0.0f;
+                    loopFadeInGain = 1.0f;
+                }
+            }
+            
             // Handle looping: if loop is enabled and we've reached the end, loop back to start
             // CRITICAL: Never loop if in release phase - respect ADSR envelope
             // We check shouldLoop which already verified !inRelease
             if (shouldLoop && playhead >= static_cast<double>(loopEndPoint)) {
                 // Loop back to loop start point (only if not in release)
-                playhead = static_cast<double>(loopStartPoint);
+                // If we're in crossfade, we may have already advanced past loopEndPoint
+                // so adjust playhead to continue from loop start with crossfade
+                double overshoot = playhead - static_cast<double>(loopEndPoint);
+                playhead = static_cast<double>(loopStartPoint) + overshoot;
+                
+                // If crossfade is still active, continue it
+                if (!loopCrossfadeActive && shouldLoop) {
+                    // Start crossfade from loop start
+                    loopCrossfadeActive = true;
+                    loopCrossfadeCounter = 0;
+                    loopFadeOutGain = 0.0f;
+                    loopFadeInGain = 0.0f;
+                }
             }
             // If inRelease is true, we explicitly do NOT loop - let playhead continue to end point
             
@@ -866,6 +921,43 @@ void SamplerVoice::process(float** output, int numChannels, int numSamples, doub
                 if (index1 < startPoint) index1 = startPoint;
                 if (index1 >= endPoint) index1 = endPoint - 1;
                 
+                // Read sample from current position (loop end region)
+                float sampleEnd = 0.0f;
+                if (index0 >= 0 && index0 < len && index1 >= 0 && index1 < len) {
+                    float fraction = static_cast<float>(playhead - static_cast<double>(index0));
+                    fraction = std::max(0.0f, std::min(1.0f, fraction));
+                    float s0 = data[index0];
+                    float s1 = data[index1];
+                    sampleEnd = (s0 * (1.0f - fraction) + s1 * fraction) * sampleGain;
+                }
+                
+                // If in loop crossfade region, also read from loop start and crossfade
+                float sample = sampleEnd;
+                if (loopCrossfadeActive && shouldLoop && loopStartPoint >= 0 && loopStartPoint < len) {
+                    // Read sample from loop start position
+                    double loopStartPlayhead = static_cast<double>(loopStartPoint) + (playhead - static_cast<double>(loopEndPoint));
+                    int loopIndex0 = static_cast<int>(loopStartPlayhead);
+                    int loopIndex1 = loopIndex0 + 1;
+                    
+                    // Clamp loop indices to valid range
+                    if (loopIndex0 < loopStartPoint) loopIndex0 = loopStartPoint;
+                    if (loopIndex0 >= loopEndPoint) loopIndex0 = loopEndPoint - 1;
+                    if (loopIndex1 < loopStartPoint) loopIndex1 = loopStartPoint;
+                    if (loopIndex1 >= loopEndPoint) loopIndex1 = loopEndPoint - 1;
+                    
+                    float sampleStart = 0.0f;
+                    if (loopIndex0 >= 0 && loopIndex0 < len && loopIndex1 >= 0 && loopIndex1 < len) {
+                        float loopFraction = static_cast<float>(loopStartPlayhead - static_cast<double>(loopIndex0));
+                        loopFraction = std::max(0.0f, std::min(1.0f, loopFraction));
+                        float ls0 = data[loopIndex0];
+                        float ls1 = data[loopIndex1];
+                        sampleStart = (ls0 * (1.0f - loopFraction) + ls1 * loopFraction) * sampleGain;
+                    }
+                    
+                    // Crossfade: fade out from end, fade in from start
+                    sample = sampleEnd * loopFadeOutGain + sampleStart * loopFadeInGain;
+                }
+                
                 // Process envelope
             if (inRelease) {
                 if (releaseCounter < releaseSamples) {
@@ -919,41 +1011,8 @@ void SamplerVoice::process(float** output, int numChannels, int numSamples, doub
                 // Use ADSR envelope (already smoothed in calculation above)
                 float testEnvelopeValue = envelopeValue;
             
-                // Final bounds check (defensive) - use cubic Hermite interpolation
-            float sample = 0.0f;
-                if (index0 >= 0 && index0 < len && index1 >= 0 && index1 < len) {
-                float fraction = static_cast<float>(playhead - static_cast<double>(index0));
-                fraction = std::max(0.0f, std::min(1.0f, fraction));
-                    
-                    // TEMPORARY: Use linear interpolation to test if cubic is causing crackling
-                    // Cubic Hermite interpolation (4-point)
-                    // int idx0 = index0 - 1;
-                    // int idx1 = index0;
-                    // int idx2 = index1;
-                    // int idx3 = index1 + 1;
-                    // 
-                    // // Clamp indices to valid range
-                    // idx0 = std::max(0, std::min(len - 1, idx0));
-                    // idx1 = std::max(0, std::min(len - 1, idx1));
-                    // idx2 = std::max(0, std::min(len - 1, idx2));
-                    // idx3 = std::max(0, std::min(len - 1, idx3));
-                    // 
-                    // float s0 = data[idx0];
-                    // float s1 = data[idx1];
-                    // float s2 = data[idx2];
-                    // float s3 = data[idx3];
-                    // sample = cubicHermite(s0, s1, s2, s3, fraction) * sampleGain;
-                    
-                    // Linear interpolation (fallback)
-                    // Ensure we're reading valid sample data
-                    if (index0 >= 0 && index0 < len && index1 >= 0 && index1 < len) {
-                        float s0 = data[index0];
-                        float s1 = data[index1];
-                        sample = (s0 * (1.0f - fraction) + s1 * fraction) * sampleGain;
-                    } else {
-                        sample = 0.0f; // Safety: output silence if indices are invalid
-                    }
-                }
+                // Read sample from current position (already computed above with crossfade if needed)
+                // sample is already set from the crossfade code above
                 
                 // Update ramp gain smoothly (0 -> 1 over 128 samples)
                 if (isRamping && rampSamplesRemaining > 0) {

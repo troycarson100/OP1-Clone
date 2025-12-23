@@ -14,8 +14,10 @@ SamplerEngine::SamplerEngine()
     , currentBlockSize(512)
     , currentNumChannels(2)
     , targetGain(1.0f)
-    , filterCutoffHz(10000.0f)  // Start at 10kHz (halfway, so filter is active)
+    , filterCutoffHz(20000.0f)  // Start fully open (20kHz = no filtering) so it doesn't reduce volume
+    , filterCutoffTarget(20000.0f)  // Track target for smoother
     , filterResonance(1.0f)
+    , lastAppliedFilterCutoff(20000.0f)  // Initialize to match filterCutoffHz
     , filterEnvAmount(0.0f)
     , filterDriveDb(0.0f)
     , loopEnvAttackMs(10.0f)
@@ -57,8 +59,8 @@ void SamplerEngine::prepare(double sampleRate, int blockSize, int numChannels) {
     // lofi.prepare(sampleRate);  // DEPRECATED - lofi removed, replaced with speed knob
     
     // Set filter parameters (now that it's prepared)
-    // Initialize filter to 10kHz so it's active but not too restrictive
-    filter.setCutoff(10000.0f);
+    // Initialize filter to 20kHz (fully open) so it doesn't reduce volume initially
+    filter.setCutoff(20000.0f);
     filter.setResonance(filterResonance);
     
     // Set envelope parameters (now that it's prepared) (DEPRECATED - kept for future use)
@@ -356,9 +358,21 @@ void SamplerEngine::process(float** output, int numChannels, int numSamples) {
         // 1. Apply drive effect
         // CRITICAL: Update filter parameters before processing to ensure they're current
         // The filter cutoff/resonance might have been changed from UI thread
-        cutoffSmoother.setTarget(filterCutoffHz, numSamples);
+        // Only update smoother target if cutoff actually changed (prevents resetting ramp every block)
+        if (std::abs(filterCutoffHz - filterCutoffTarget) > 0.1f) {
+            filterCutoffTarget = filterCutoffHz;
+            // Use time-based smoothing (20ms) for smooth filter changes
+            const float filterSmoothTimeMs = 20.0f; // 20ms smoothing time
+            int filterSmoothSamples = static_cast<int>(currentSampleRate * filterSmoothTimeMs / 1000.0);
+            filterSmoothSamples = std::max(1, std::min(filterSmoothSamples, numSamples * 4)); // Clamp to reasonable range
+            cutoffSmoother.setTarget(filterCutoffHz, filterSmoothSamples);
+        }
         float currentSmoothedCutoff = cutoffSmoother.getNextValue();
-        filter.setCutoff(currentSmoothedCutoff);
+        // Only update filter if cutoff changed significantly (prevents crackling from frequent updates)
+        if (std::abs(currentSmoothedCutoff - lastAppliedFilterCutoff) > 1.0f) {
+            filter.setCutoff(currentSmoothedCutoff);
+            lastAppliedFilterCutoff = currentSmoothedCutoff;
+        }
         filter.setResonance(filterResonance);
         
         drive.processBlock(channelData, tempBuffer, numSamples);
@@ -408,12 +422,36 @@ void SamplerEngine::process(float** output, int numChannels, int numSamples) {
             // No envelope modulation - process entire block at once
             // CRITICAL: Ensure filter cutoff is updated before processing
             // The cutoff might have been changed from UI, so update it now
-            cutoffSmoother.setTarget(filterCutoffHz, numSamples);
+            // Only update smoother target if cutoff actually changed (prevents resetting ramp every block)
+            if (std::abs(filterCutoffHz - filterCutoffTarget) > 0.1f) {
+                filterCutoffTarget = filterCutoffHz;
+                // Use time-based smoothing (20ms) for smooth filter changes
+                const float filterSmoothTimeMs = 20.0f; // 20ms smoothing time
+                int filterSmoothSamples = static_cast<int>(currentSampleRate * filterSmoothTimeMs / 1000.0);
+                filterSmoothSamples = std::max(1, std::min(filterSmoothSamples, numSamples * 4)); // Clamp to reasonable range
+                cutoffSmoother.setTarget(filterCutoffHz, filterSmoothSamples);
+            }
             float smoothedCutoff = cutoffSmoother.getNextValue();
-            filter.setCutoff(smoothedCutoff);
             
-            // Process entire block through filter
-            filter.processBlock(tempBuffer, channelData, numSamples);
+            // If filter is at maximum cutoff (20kHz), bypass filter processing
+            // to avoid any potential issues and ensure clean pass-through
+            if (smoothedCutoff >= 19900.0f) {
+                // Bypass filter - just copy drive output directly to channel
+                std::copy(tempBuffer, tempBuffer + numSamples, channelData);
+            } else {
+                // Process block - update filter cutoff only if changed significantly
+                // Don't update per-sample to avoid crackling from frequent coefficient changes
+                if (std::abs(smoothedCutoff - lastAppliedFilterCutoff) > 1.0f) {
+                    filter.setCutoff(smoothedCutoff);
+                    lastAppliedFilterCutoff = smoothedCutoff;
+                }
+                filter.processBlock(tempBuffer, channelData, numSamples);
+                
+                // Advance smoother for next block (but don't use the values for this block)
+                for (int i = 1; i < numSamples; ++i) {
+                    cutoffSmoother.getNextValue();
+                }
+            }
             
             // Still advance envelope (even if not used)
             for (int i = 0; i < numSamples; ++i) {
@@ -527,12 +565,18 @@ float SamplerEngine::getEnvelopeValue() const {
 }
 
 void SamplerEngine::setLPFilterCutoff(float cutoffHz) {
-    filterCutoffHz = std::max(20.0f, std::min(20000.0f, cutoffHz));
-    // Only update filter if it's been prepared (sampleRate > 0)
-    if (currentSampleRate > 0.0) {
-        filter.setCutoff(filterCutoffHz);
-        // Update smoother target (will smooth over next block)
-        cutoffSmoother.setTarget(filterCutoffHz, currentBlockSize);
+    float newCutoff = std::max(20.0f, std::min(20000.0f, cutoffHz));
+    // Only update if cutoff actually changed (prevents unnecessary smoother resets)
+    if (std::abs(newCutoff - filterCutoffHz) > 0.1f) {
+        filterCutoffHz = newCutoff;
+        // Only update filter if it's been prepared (sampleRate > 0)
+        if (currentSampleRate > 0.0) {
+            // Use time-based smoothing (20ms) for smooth filter changes
+            const float filterSmoothTimeMs = 20.0f; // 20ms smoothing time
+            int filterSmoothSamples = static_cast<int>(currentSampleRate * filterSmoothTimeMs / 1000.0);
+            filterSmoothSamples = std::max(1, std::min(filterSmoothSamples, currentBlockSize * 4)); // Clamp to reasonable range
+            cutoffSmoother.setTarget(filterCutoffHz, filterSmoothSamples);
+        }
     }
 }
 

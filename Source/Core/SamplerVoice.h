@@ -196,6 +196,13 @@ private:
     int loopStartPoint;      // Loop start point (default 0)
     int loopEndPoint;        // Loop end point (default 0)
     
+    // Loop crossfade state (for smooth loop transitions)
+    bool loopCrossfadeActive;  // True when crossfading at loop boundary
+    int loopCrossfadeSamples; // Crossfade duration in samples (e.g., 512 samples ~11.6ms at 44.1k)
+    int loopCrossfadeCounter; // Current position in crossfade (0 to loopCrossfadeSamples)
+    float loopFadeOutGain;    // Fade-out gain (1.0 -> 0.0) for end of loop
+    float loopFadeInGain;     // Fade-in gain (0.0 -> 1.0) for start of loop
+    
     // Per-voice gain (for gain staging)
     float voiceGain;         // Per-voice gain (default 0.2 for polyphony)
     

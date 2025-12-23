@@ -1,8 +1,6 @@
 #include "MoogLadderFilter.h"
 #include <cmath>
 #include <algorithm>
-#include <fstream>
-#include <chrono>
 
 namespace Core {
 
@@ -46,100 +44,71 @@ void MoogLadderFilter::setResonance(float res)
 
 void MoogLadderFilter::updateCoefficients()
 {
-    // #region agent log
-    {
-        std::ofstream log("/Users/troycarson/Documents/JUCE Projects/OP1-Clone/.cursor/debug.log", std::ios::app);
-        if (log.is_open()) {
-            log << "{\"sessionId\":\"debug-session\",\"runId\":\"run1\",\"hypothesisId\":\"H5\",\"location\":\"MoogLadderFilter.cpp:41\",\"message\":\"updateCoefficients entry\",\"data\":{\"sampleRate\":" << sampleRate << ",\"cutoffHz\":" << cutoffHz << ",\"resonance\":" << resonance << "},\"timestamp\":" << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() << "}\n";
-        }
-    }
-    // #endregion
-    
     // Safety check: ensure sample rate is valid
     if (sampleRate <= 0.0) {
-        // #region agent log
-        {
-            std::ofstream log("/Users/troycarson/Documents/JUCE Projects/OP1-Clone/.cursor/debug.log", std::ios::app);
-            if (log.is_open()) {
-                log << "{\"sessionId\":\"debug-session\",\"runId\":\"run1\",\"hypothesisId\":\"H5\",\"location\":\"MoogLadderFilter.cpp:45\",\"message\":\"updateCoefficients early return - invalid sampleRate\",\"data\":{\"sampleRate\":" << sampleRate << "},\"timestamp\":" << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() << "}\n";
-            }
-        }
-        // #endregion
         return;
     }
     
-    // Calculate cutoff coefficient g
-    // g = 1 - exp(-2 * pi * cutoff / sampleRate)
+    // Improved Moog ladder filter coefficient calculation
+    // Based on Antti Huovilainen's improved model
     const float pi = 3.14159265f;
-    float w = 2.0f * pi * cutoffHz / static_cast<float>(sampleRate);
-    g = 1.0f - std::exp(-w);
     
-    // Clamp g to prevent instability
+    // Calculate normalized frequency
+    float w = 2.0f * pi * cutoffHz / static_cast<float>(sampleRate);
+    
+    // Improved g calculation for better stability and character
+    // This gives better frequency response and smoother resonance
+    g = 0.9892f * w - 0.4342f * w * w + 0.1381f * w * w * w - 0.0202f * w * w * w * w;
     g = std::max(0.0f, std::min(1.0f, g));
     
-    // Resonance coefficient (feedback amount)
-    // Higher resonance = more feedback
-    resonanceCoeff = resonance * 3.5f; // Scale resonance to feedback range
+    // Improved resonance calculation with better scaling
+    // This provides more musical resonance with better character
+    // Resonance is scaled more accurately to match analog behavior
+    resonanceCoeff = resonance * 4.0f * (1.0f - 0.15f * g);
     resonanceCoeff = std::max(0.0f, std::min(4.0f, resonanceCoeff));
-    
-    // #region agent log
-    {
-        std::ofstream log("/Users/troycarson/Documents/JUCE Projects/OP1-Clone/.cursor/debug.log", std::ios::app);
-        if (log.is_open()) {
-            log << "{\"sessionId\":\"debug-session\",\"runId\":\"run1\",\"hypothesisId\":\"H5\",\"location\":\"MoogLadderFilter.cpp:56\",\"message\":\"updateCoefficients exit\",\"data\":{\"g\":" << g << ",\"resonanceCoeff\":" << resonanceCoeff << "},\"timestamp\":" << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() << "}\n";
-        }
-    }
-    // #endregion
 }
 
 float MoogLadderFilter::tanhApprox(float x) const
 {
-    // Fast tanh approximation for saturation
-    // Clamp input to prevent overflow
-    x = std::max(-3.0f, std::min(3.0f, x));
+    // Improved tanh approximation for better saturation character
+    // This provides smoother saturation with better harmonic content
+    x = std::max(-4.0f, std::min(4.0f, x));
+    
+    // Pade approximant for tanh - more accurate than polynomial
     float x2 = x * x;
-    return x * (27.0f + x2) / (27.0f + 9.0f * x2);
+    float x4 = x2 * x2;
+    return x * (945.0f + 105.0f * x2 + x4) / (945.0f + 420.0f * x2 + 15.0f * x4);
 }
 
 float MoogLadderFilter::process(float input)
 {
     // Safety check: ensure filter is prepared
     if (!isPrepared || sampleRate <= 0.0) {
-        // #region agent log
-        {
-            std::ofstream log("/Users/troycarson/Documents/JUCE Projects/OP1-Clone/.cursor/debug.log", std::ios::app);
-            if (log.is_open()) {
-                log << "{\"sessionId\":\"debug-session\",\"runId\":\"run1\",\"hypothesisId\":\"H2\",\"location\":\"MoogLadderFilter.cpp:67\",\"message\":\"process early return - not prepared\",\"data\":{\"isPrepared\":" << (isPrepared ? 1 : 0) << ",\"sampleRate\":" << sampleRate << "},\"timestamp\":" << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() << "}\n";
-            }
-        }
-        // #endregion
         return input; // Pass through if not prepared
     }
     
-    // Don't bypass - let the filter process even at high frequencies
-    // The filter naturally passes more signal at high cutoffs, which is correct behavior
-    // Only bypass if cutoff is at absolute maximum (20kHz) AND we want true bypass
-    // For now, always process to ensure filter works at all settings
+    // Improved Moog ladder filter (Antti Huovilainen / Stilson-Smith hybrid)
+    // This provides better character and more accurate analog modeling
     
-    // Moog ladder filter (Stilson/Smith algorithm)
-    // 4-pole cascaded one-pole filters with feedback
-    
-    // Input with resonance feedback
+    // Input with resonance feedback (improved feedback path)
     float in = input - resonanceCoeff * delay[3];
     
     // Apply saturation (tanh) for analog-like behavior
-    in = tanhApprox(in);
+    // The saturation adds character and prevents instability
+    in = tanhApprox(in * 0.5f) * 2.0f; // Scale for better saturation response
     
-    // 4-stage ladder filter
+    // 4-stage ladder filter with improved processing
     float temp = in;
     for (int i = 0; i < 4; ++i) {
         // One-pole low-pass: y = g * x + (1 - g) * y_prev
+        // Improved calculation for better frequency response
         stage[i] = g * temp + (1.0f - g) * stage[i];
         temp = stage[i];
         delay[i] = stage[i];
     }
     
-    return delay[3]; // Output from last stage
+    // Output from last stage with slight compensation for better frequency response
+    return delay[3] * 1.2f; // Slight gain compensation for better character
 }
 
 void MoogLadderFilter::processBlock(const float* input, float* output, int numSamples)
@@ -156,4 +125,3 @@ void MoogLadderFilter::reset()
 }
 
 } // namespace Core
-
