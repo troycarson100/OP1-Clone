@@ -194,23 +194,101 @@ void WaveformComponent::drawWaveform(juce::Graphics& g, juce::Rectangle<int> bou
             int visibleEnd = std::min(totalSamples, endPoint);
             int visibleLength = visibleEnd - visibleStart;
             
+            // Check if reverse loop is active (loopStartPoint > loopEndPoint)
+            bool isReverseLoop = loopStartPoint > loopEndPoint;
+            
+            // Calculate line height (60% of bounds height - 40% shorter)
+            float lineHeight = static_cast<float>(bounds.getHeight()) * 0.6f;
+            float lineTop = static_cast<float>(bounds.getY()) + (static_cast<float>(bounds.getHeight()) - lineHeight) * 0.5f;
+            float lineBottom = lineTop + lineHeight;
+            
+            // Set font for flags
+            g.setFont(10.0f);
+            
             if (visibleLength > 0) {
                 // Draw loop start marker
                 if (loopStartPoint >= visibleStart && loopStartPoint < visibleEnd) {
                     float loopStartX = static_cast<float>(bounds.getX()) + 
                         ((static_cast<float>(loopStartPoint - visibleStart) / static_cast<float>(visibleLength)) * static_cast<float>(width));
-                    g.drawVerticalLine(static_cast<int>(loopStartX), 
-                                     static_cast<float>(bounds.getY()), 
-                                     static_cast<float>(bounds.getBottom()));
+                    int startXInt = static_cast<int>(loopStartX);
+                    
+                    // Draw shorter vertical line (60% height)
+                    g.drawVerticalLine(startXInt, lineTop, lineBottom);
+                    
+                    // Draw "S" flag as triangle pointer attached to top of line
+                    // In reverse mode, triangle points left; otherwise points right
+                    float flagSize = 16.0f;  // Bigger flag
+                    float flagY = lineTop;   // Attached to top of line
+                    juce::Path flagPath;
+                    
+                    if (isReverseLoop) {
+                        // Triangle pointing left, back edge aligned with line
+                        flagPath.addTriangle(loopStartX - flagSize, flagY + flagSize * 0.5f,  // Left point (apex)
+                                           loopStartX, flagY,                                  // Top right (back edge on line)
+                                           loopStartX, flagY + flagSize);                      // Bottom right (back edge on line)
+                    } else {
+                        // Triangle pointing right, back edge aligned with line
+                        flagPath.addTriangle(loopStartX + flagSize, flagY + flagSize * 0.5f,  // Right point (apex)
+                                           loopStartX, flagY,                                   // Top left (back edge on line)
+                                           loopStartX, flagY + flagSize);                       // Bottom left (back edge on line)
+                    }
+                    
+                    // Draw white triangle flag
+                    g.setColour(juce::Colours::white);
+                    g.fillPath(flagPath);
+                    
+                    // Draw "S" letter in black on the flag (bold font), positioned towards the back
+                    g.setColour(juce::Colours::black);
+                    juce::Font boldFont(10.0f, juce::Font::bold);
+                    g.setFont(boldFont);
+                    // Position text more towards the back (base) of the triangle
+                    float textOffset = isReverseLoop ? -flagSize * 0.3f : flagSize * 0.3f;
+                    juce::Rectangle<float> textRect(loopStartX + textOffset - flagSize * 0.25f, flagY, flagSize * 0.5f, flagSize);
+                    g.drawText("S", textRect, juce::Justification::centred);
+                    
+                    // Reset color to white for the end line
+                    g.setColour(juce::Colours::white);
                 }
                 
                 // Draw loop end marker
                 if (loopEndPoint > visibleStart && loopEndPoint <= visibleEnd) {
                     float loopEndX = static_cast<float>(bounds.getX()) + 
                         ((static_cast<float>(loopEndPoint - visibleStart) / static_cast<float>(visibleLength)) * static_cast<float>(width));
-                    g.drawVerticalLine(static_cast<int>(loopEndX), 
-                                     static_cast<float>(bounds.getY()), 
-                                     static_cast<float>(bounds.getBottom()));
+                    int endXInt = static_cast<int>(loopEndX);
+                    
+                    // Draw shorter vertical line (60% height)
+                    g.drawVerticalLine(endXInt, lineTop, lineBottom);
+                    
+                    // Draw "E" flag as triangle pointer attached to top of line
+                    // In reverse mode, triangle points right; otherwise points left
+                    float flagSize = 16.0f;  // Bigger flag
+                    float flagY = lineTop;    // Attached to top of line
+                    juce::Path flagPath;
+                    
+                    if (isReverseLoop) {
+                        // Triangle pointing right, back edge aligned with line
+                        flagPath.addTriangle(loopEndX + flagSize, flagY + flagSize * 0.5f,  // Right point (apex)
+                                           loopEndX, flagY,                                   // Top left (back edge on line)
+                                           loopEndX, flagY + flagSize);                       // Bottom left (back edge on line)
+                    } else {
+                        // Triangle pointing left, back edge aligned with line
+                        flagPath.addTriangle(loopEndX - flagSize, flagY + flagSize * 0.5f,  // Left point (apex)
+                                           loopEndX, flagY,                                  // Top right (back edge on line)
+                                           loopEndX, flagY + flagSize);                      // Bottom right (back edge on line)
+                    }
+                    
+                    // Draw white triangle flag
+                    g.setColour(juce::Colours::white);
+                    g.fillPath(flagPath);
+                    
+                    // Draw "E" letter in black on the flag (bold font), positioned towards the back
+                    g.setColour(juce::Colours::black);
+                    juce::Font boldFont(10.0f, juce::Font::bold);
+                    g.setFont(boldFont);
+                    // Position text more towards the back (base) of the triangle
+                    float textOffset = isReverseLoop ? flagSize * 0.3f : -flagSize * 0.3f;
+                    juce::Rectangle<float> textRect(loopEndX + textOffset - flagSize * 0.25f, flagY, flagSize * 0.5f, flagSize);
+                    g.drawText("E", textRect, juce::Justification::centred);
                 }
             }
         }
