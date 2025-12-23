@@ -35,6 +35,9 @@ public:
     // Update loop controls state (grey out when disabled)
     void updateLoopControlsState();
     
+    // Update shift mode display values when shift is toggled
+    void updateShiftModeDisplayValues();
+    
 private:
     Op1CloneAudioProcessorEditor* editor;
 };

@@ -4,6 +4,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <vector>
 #include <algorithm>
+#include <cmath>
 
 EditorUpdateMethods::EditorUpdateMethods(Op1CloneAudioProcessorEditor* editor)
     : editor(editor)
@@ -235,6 +236,58 @@ void EditorUpdateMethods::updateLoopControlsState() {
         editor->paramDisplay6.setColour(juce::Label::textColourId, loopEnabled ? enabledColor : disabledColor);
         // Loop toggle itself (7) is always enabled (white)
         editor->paramDisplay7.setColour(juce::Label::textColourId, enabledColor);
+    }
+}
+
+void EditorUpdateMethods::updateShiftModeDisplayValues() {
+    // Update display values when shift mode is toggled
+    bool shiftEnabled = editor->shiftToggleButton.getToggleState();
+    
+    if (shiftEnabled) {
+        // Shift mode: Update displays with current shift mode values
+        // Encoder 1: Cutoff (20-20000 Hz, default 20kHz = 1.0)
+        float cutoffValue = std::log(editor->lpCutoffHz / 20.0f) / std::log(1000.0f);
+        cutoffValue = std::max(0.0f, std::min(1.0f, cutoffValue));
+        editor->encoder1.setValue(cutoffValue);
+        editor->paramDisplay1.setValue(cutoffValue);
+        if (editor->lpCutoffHz >= 1000.0f) {
+            editor->paramDisplay1.setValueText(juce::String(editor->lpCutoffHz / 1000.0f, 1) + "kHz");
+        } else {
+            editor->paramDisplay1.setValueText(juce::String(static_cast<int>(editor->lpCutoffHz)) + "Hz");
+        }
+        
+        // Encoder 2: Resonance (0.0-4.0, default 1.0 = 0.25)
+        float resValue = editor->lpResonance / 4.0f;
+        editor->encoder2.setValue(resValue);
+        editor->paramDisplay2.setValue(resValue);
+        editor->paramDisplay2.setValueText(juce::String(editor->lpResonance, 2));
+        
+        // Encoder 3: Drive (0-20 dB, default 0 dB = 0.0)
+        float driveValue = editor->lpDriveDb / 20.0f;
+        editor->encoder3.setValue(driveValue);
+        editor->paramDisplay3.setValue(driveValue);
+        editor->paramDisplay3.setValueText(juce::String(editor->lpDriveDb, 1) + "dB");
+        
+        // Encoder 4: Speed (time warp, 0.25-4.0x, default 1.0x = 0.5)
+        float speedValue = (editor->timeWarpSpeed - 0.25f) / 3.75f;
+        editor->encoder4.setValue(speedValue);
+        editor->paramDisplay4.setValue(speedValue);
+        editor->paramDisplay4.setValueText(juce::String(editor->timeWarpSpeed, 2) + "x");
+        
+        // Encoder 5: Loop Start (already handled by waveform)
+        // Encoder 6: Loop End (already handled by waveform)
+        
+        // Encoder 7: Loop (ON/OFF, default OFF = 0.0)
+        float loopValue = editor->loopEnabled ? 1.0f : 0.0f;
+        editor->encoder7.setValue(loopValue);
+        editor->paramDisplay7.setValue(loopValue);
+        editor->paramDisplay7.setValueText(editor->loopEnabled ? "ON" : "OFF");
+        
+        // Encoder 8: Play (Mono/Poly, default Poly = 1.0)
+        float playValue = editor->isPolyphonic ? 1.0f : 0.0f;
+        editor->encoder8.setValue(playValue);
+        editor->paramDisplay8.setValue(playValue);
+        editor->paramDisplay8.setValueText(editor->isPolyphonic ? "Poly" : "Mono");
     }
 }
 

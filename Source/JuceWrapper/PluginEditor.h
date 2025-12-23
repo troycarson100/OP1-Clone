@@ -216,6 +216,9 @@ private:
     // Update parameter display labels based on shift state
     void updateParameterDisplayLabels();
     
+    // Update shift mode display values when shift is toggled
+    void updateShiftModeDisplayValues();
+    
     // Friend classes for refactoring (to comply with 500-line rule)
     friend class EncoderSetupManager;
     friend class EditorLayoutManager;

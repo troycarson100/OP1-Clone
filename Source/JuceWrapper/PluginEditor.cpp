@@ -71,15 +71,15 @@ Op1CloneAudioProcessorEditor::Op1CloneAudioProcessorEditor(Op1CloneAudioProcesso
     waveformInitialized = false;
     
     // Initialize shift mode parameters
-    lpCutoffHz = 10000.0f;  // Start at 10kHz so filter is active
+    lpCutoffHz = 20000.0f;  // Start at 20kHz (fully open)
     lpResonance = 1.0f;
     lpEnvAmount = 0.0f;  // DEPRECATED - kept for future use
-    lpDriveDb = 0.0f;
+    lpDriveDb = 0.0f;  // Default to 0 dB
     timeWarpSpeed = 1.0f;  // Default to normal speed (1.0x)
-    isPolyphonic = true;
+    isPolyphonic = true;  // Default to Poly/Stereo
     loopStartPoint = 0;
     loopEndPoint = 0;
-    loopEnabled = false;
+    loopEnabled = false;  // Default to OFF
     loopEnvAttack = 10.0f;
     loopEnvRelease = 100.0f;
     
@@ -382,5 +382,11 @@ void Op1CloneAudioProcessorEditor::updateLoopControlsState() {
     // Delegate to update methods manager (extracted to comply with 500-line rule)
     EditorUpdateMethods updateMethods(this);
     updateMethods.updateLoopControlsState();
+}
+
+void Op1CloneAudioProcessorEditor::updateShiftModeDisplayValues() {
+    // Delegate to update methods manager (extracted to comply with 500-line rule)
+    EditorUpdateMethods updateMethods(this);
+    updateMethods.updateShiftModeDisplayValues();
 }
 

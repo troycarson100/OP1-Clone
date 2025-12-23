@@ -62,6 +62,9 @@ void EditorEventHandlers::handleButtonClicked(juce::Button* button) {
         // Update parameter display labels based on shift state
         editor->updateParameterDisplayLabels();
         
+        // Update shift mode display values
+        editor->updateShiftModeDisplayValues();
+        
         // BPM display is always visible, no need to toggle
         
         // ADSR visualization is now controlled by drag events, not shift button

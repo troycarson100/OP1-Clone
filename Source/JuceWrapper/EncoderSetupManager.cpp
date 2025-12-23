@@ -53,10 +53,11 @@ void EncoderSetupManager::setupEncoder1() {
     ed->encoder1.onButtonPressed = [ed]() {
         // Encoder 1 button pressed - reset to default
         if (ed->shiftToggleButton.getToggleState()) {
-            // Shift mode: Cutoff default = 1000 Hz
-            float defaultValue = std::log(1000.0f / 20.0f) / std::log(1000.0f);
-            ed->encoder1.setValue(defaultValue);
-            ed->encoder1.onValueChanged(defaultValue);
+            // Shift mode: Cutoff default = 20kHz (fully open, value = 1.0)
+            ed->lpCutoffHz = 20000.0f;
+            ed->audioProcessor.setLPFilterCutoff(20000.0f);
+            ed->encoder1.setValue(1.0f);
+            ed->encoder1.onValueChanged(1.0f);
         } else {
             // Normal mode: Repitch default = 0 semitones (value = 0.5)
             ed->encoder1.setValue(0.5f);
