@@ -8,10 +8,10 @@ namespace Core {
 struct MoogLadderFilterImpl;
 
 /**
- * Moog Ladder Filter - Wrapper around JUCE's high-quality LadderFilter
+ * Moog Ladder Filter - Pure C++ implementation
  * 
  * 4-pole (24dB/octave) low-pass filter with classic analog sound
- * Uses JUCE's proven LadderFilter implementation internally
+ * Based on Huovilainen method - portable, no JUCE dependencies
  */
 class MoogLadderFilter {
 public:
@@ -65,7 +65,7 @@ public:
     void reset();
 
 private:
-    // Pimpl pattern to hide JUCE dependencies
+    // Pimpl pattern to hide implementation details
     std::unique_ptr<MoogLadderFilterImpl> pimpl;
 };
 

@@ -160,7 +160,8 @@ Op1CloneAudioProcessorEditor::Op1CloneAudioProcessorEditor(Op1CloneAudioProcesso
     loadSampleButton.onClick = [this] { loadSampleButtonClicked(); };
     addAndMakeVisible(&loadSampleButton);
     
-    // Time-warp toggle (larger, more visible)
+    // Time-warp toggle (larger, more visible) - COMMENTED OUT
+    /*
     warpToggleButton.setButtonText("Time Warp");
     warpToggleButton.setToggleState(true, juce::dontSendNotification);
     warpToggleButton.setColour(juce::ToggleButton::textColourId, juce::Colours::white);
@@ -170,6 +171,7 @@ Op1CloneAudioProcessorEditor::Op1CloneAudioProcessorEditor(Op1CloneAudioProcesso
     warpToggleButton.addListener(this);
     // Also set initial state
     addAndMakeVisible(&warpToggleButton);
+    */
     
     // Shift toggle button (square, lit up when enabled, greyed out when disabled)
     shiftToggleButton.setButtonText("shift");

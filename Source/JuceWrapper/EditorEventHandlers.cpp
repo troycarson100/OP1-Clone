@@ -48,9 +48,12 @@ bool EditorEventHandlers::handleKeyStateChanged(bool /* isKeyDown */) {
 }
 
 void EditorEventHandlers::handleButtonClicked(juce::Button* button) {
+    // Time warp toggle - COMMENTED OUT
+    /*
     if (button == &editor->warpToggleButton) {
         bool enabled = editor->warpToggleButton.getToggleState();
-    } else if (button == &editor->shiftToggleButton) {
+    } else */
+    if (button == &editor->shiftToggleButton) {
         // Shift button toggled - hide ADSR label when shift is on
         bool shiftEnabled = editor->shiftToggleButton.getToggleState();
         editor->adsrLabel.setVisible(false);  // Always hide ADSR label (shift mode uses different parameters)

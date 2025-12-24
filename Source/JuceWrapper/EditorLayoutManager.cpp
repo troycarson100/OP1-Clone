@@ -35,8 +35,8 @@ void EditorLayoutManager::layoutComponents() {
     // Left side: Time Warp and Shift toggles (before screen)
     auto leftControlsArea = bounds.removeFromLeft(200).reduced(10);
     
-    // Time-warp toggle
-    editor->warpToggleButton.setBounds(leftControlsArea.removeFromTop(40).reduced(5));
+    // Time-warp toggle - COMMENTED OUT
+    // editor->warpToggleButton.setBounds(leftControlsArea.removeFromTop(40).reduced(5));
     
     // Shift toggle button (wide enough for "shift" text)
     auto shiftButtonArea = leftControlsArea.removeFromTop(50);

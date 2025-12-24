@@ -134,7 +134,17 @@ Currently uses a generated 440Hz sine wave (1 second) as the test sample. This i
 ## Project Rules
 
 - All files ≤ 500 lines
-- Core logic must be JUCE-agnostic
+- **Core logic must be JUCE-agnostic** - See `Source/Core/CORE_RULES.md` for details
 - No allocations in audio thread
-- Portable C++ only in Core/
+- Portable C++ only in Core/ (NO JUCE dependencies allowed)
+
+### Verifying Core Purity
+
+Before committing, verify Core has no JUCE dependencies:
+
+```bash
+./verify_core_purity.sh
+```
+
+This script checks that `Source/Core/` contains **zero** JUCE dependencies. See `Source/Core/CORE_RULES.md` for full guidelines.
 
