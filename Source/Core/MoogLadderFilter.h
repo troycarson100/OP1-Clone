@@ -1,13 +1,17 @@
 #pragma once
 
+#include <memory>
+
 namespace Core {
 
+// Forward declaration for pimpl pattern
+struct MoogLadderFilterImpl;
+
 /**
- * Moog Ladder Filter (Stilson/Smith algorithm)
- * Portable C++ - no JUCE dependencies
+ * Moog Ladder Filter - Wrapper around JUCE's high-quality LadderFilter
  * 
  * 4-pole (24dB/octave) low-pass filter with classic analog sound
- * Based on the digital Moog ladder filter implementation
+ * Uses JUCE's proven LadderFilter implementation internally
  */
 class MoogLadderFilter {
 public:
@@ -61,27 +65,8 @@ public:
     void reset();
 
 private:
-    double sampleRate;
-    float cutoffHz;
-    float resonance;
-    float drive;  // Integrated drive/saturation (0.0 = clean, 1.0+ = saturated)
-    
-    // Filter state (4 stages for 4-pole filter)
-    float stage[4];
-    
-    // Delay line for feedback
-    float delay[4];
-    
-    // Pre-calculated coefficients
-    float g;      // Cutoff coefficient (frequency warped)
-    float resonanceCoeff;  // Resonance coefficient (Q-based scaling)
-    
-    // Flag to track if filter is prepared
-    bool isPrepared;
-    
-    void updateCoefficients();
-    float tanhApprox(float x) const;
-    float saturate(float x) const;  // Drive saturation function
+    // Pimpl pattern to hide JUCE dependencies
+    std::unique_ptr<MoogLadderFilterImpl> pimpl;
 };
 
 } // namespace Core
