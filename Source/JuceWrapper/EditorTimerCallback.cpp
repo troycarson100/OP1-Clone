@@ -29,25 +29,52 @@ void EditorTimerCallback::handleTimerCallback() {
         }
     }
     
+    // OLD ADSR visualization fade-out code (COMMENTED OUT - replaced with pill component)
+    // Pill component stays visible, no fade-out needed
+    /*
     // Handle ADSR visualization fade-out
-    if (!editor->isADSRDragging && editor->adsrFadeOutStartTime > 0 && editor->adsrVisualization.isVisible()) {
-        int64_t currentTime = juce::Time::currentTimeMillis();
-        int64_t elapsed = currentTime - editor->adsrFadeOutStartTime;
-        const int64_t ADSR_FADE_OUT_DURATION_MS = 1000;  // 1 second fade-out
+    // Only process fade-out if component is in tree and being used
+    if (!editor->isADSRDragging && editor->adsrFadeOutStartTime > 0) {
+        // Check if component is in tree - if not, remove it immediately
+        if (editor->adsrVisualization.getParentComponent() == nullptr) {
+            editor->adsrFadeOutStartTime = 0;  // Reset fade timer
+            return;  // Component not in tree, nothing to fade
+        }
         
-        if (elapsed >= ADSR_FADE_OUT_DURATION_MS) {
-            // Fade complete - hide
-            editor->adsrVisualization.setAlpha(0.0f);
+        if (editor->adsrVisualization.isVisible()) {
+            int64_t currentTime = juce::Time::currentTimeMillis();
+            int64_t elapsed = currentTime - editor->adsrFadeOutStartTime;
+            const int64_t ADSR_FADE_OUT_DURATION_MS = 1000;  // 1 second fade-out
+            
+            if (elapsed >= ADSR_FADE_OUT_DURATION_MS) {
+                // Fade complete - hide and remove from tree
+                editor->adsrVisualization.setPaintingEnabled(false);  // Disable painting
+                editor->adsrVisualization.setAlpha(0.0f);
+                editor->adsrVisualization.setVisible(false);
+                if (editor->adsrVisualization.getParentComponent() != nullptr) {
+                    editor->adsrVisualization.getParentComponent()->removeChildComponent(&editor->adsrVisualization);
+                }
+                editor->adsrVisualization.setBounds(0, 0, 0, 0);  // Set bounds to zero
+                editor->adsrFadeOutStartTime = 0;
+            } else {
+                // Calculate fade progress (0.0 to 1.0)
+                float fadeProgress = static_cast<float>(elapsed) / static_cast<float>(ADSR_FADE_OUT_DURATION_MS);
+                float alpha = 1.0f - fadeProgress;
+                editor->adsrVisualization.setAlpha(alpha);
+                editor->adsrVisualization.repaint();
+            }
+        }
+    } else if (!editor->isADSRDragging && editor->adsrFadeOutStartTime == 0) {
+        // Not dragging and no fade-out active - ensure component is removed from tree
+        if (editor->adsrVisualization.getParentComponent() != nullptr) {
+            editor->adsrVisualization.getParentComponent()->removeChildComponent(&editor->adsrVisualization);
+            editor->adsrVisualization.setPaintingEnabled(false);  // Disable painting
             editor->adsrVisualization.setVisible(false);
-            editor->adsrFadeOutStartTime = 0;
-        } else {
-            // Calculate fade progress (0.0 to 1.0)
-            float fadeProgress = static_cast<float>(elapsed) / static_cast<float>(ADSR_FADE_OUT_DURATION_MS);
-            float alpha = 1.0f - fadeProgress;
-            editor->adsrVisualization.setAlpha(alpha);
-            editor->adsrVisualization.repaint();
+            editor->adsrVisualization.setAlpha(0.0f);
+            editor->adsrVisualization.setBounds(0, 0, 0, 0);  // Set bounds to zero
         }
     }
+    */
     
     // Update playhead position (yellow line on waveform)
     double playheadPos = editor->audioProcessor.getPlayheadPosition();

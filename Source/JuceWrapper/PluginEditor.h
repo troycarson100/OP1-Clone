@@ -7,7 +7,8 @@
 #include "ScreenComponent.h"
 #include "EncoderComponent.h"
 #include "MidiStatusComponent.h"
-#include "ADSRVisualizationComponent.h"
+// #include "ADSRVisualizationComponent.h"  // COMMENTED OUT - replaced with ADSRPillComponent
+#include "ADSRPillComponent.h"
 #include <array>
 
 // Simple JUCE editor with gain slider
@@ -34,8 +35,11 @@ private:
     
     ScreenComponent screenComponent;
     
-    // ADSR visualization overlay
-    ADSRVisualizationComponent adsrVisualization;
+    // ADSR visualization overlay (COMMENTED OUT - replaced with pill component)
+    // ADSRVisualizationComponent adsrVisualization;
+    
+    // New pill-shaped ADSR visualization (always visible)
+    ADSRPillComponent adsrPillComponent;
     juce::Label adsrLabel;  // "ADSR" text overlay in top right
     juce::Label parameterDisplayLabel;  // Parameter value display (e.g., "A 1s") in top left
     juce::Label bpmDisplayLabel;  // BPM display (e.g., "BPM: 120") in top right
@@ -176,7 +180,6 @@ private:
     float lpResonance;     // Low-pass filter resonance (0.1-10.0)
     float lpEnvAmount;     // Envelope amount (-1.0 to 1.0, positive/negative) - DEPRECATED, kept for future use
     float lpDriveDb;       // Drive amount in dB (0.0-24.0 dB)
-    float timeWarpSpeed;    // Time-warp playback speed (0.5x to 2.0x, where 1.0x = normal speed)
     bool isPolyphonic;      // Playback mode (true = poly, false = mono)
     int loopStartPoint;    // Loop start point (sample index)
     int loopEndPoint;      // Loop end point (sample index)
@@ -199,6 +202,7 @@ private:
     
     // Update ADSR visualization and send to processor
     void updateADSR();
+    // void setADSRVisualizationBounds();  // COMMENTED OUT - replaced with pill component (old overlay visualization)
     
     // Update parameter display text
     void updateParameterDisplay(const juce::String& paramName, float valueMs);

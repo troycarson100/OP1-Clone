@@ -8,6 +8,22 @@ EditorLayoutManager::EditorLayoutManager(Op1CloneAudioProcessorEditor* editor)
 }
 
 void EditorLayoutManager::layoutComponents() {
+    // OLD ADSR visualization removal code (COMMENTED OUT - replaced with pill component)
+    /*
+    // CRITICAL: Ensure ADSR visualization is removed if not in use
+    // This must happen FIRST before any layout calculations
+    // But only do this if not actively being dragged AND not fading
+    if (!editor->isADSRDragging && editor->adsrFadeOutStartTime == 0) {
+        if (editor->adsrVisualization.getParentComponent() != nullptr) {
+            editor->adsrVisualization.getParentComponent()->removeChildComponent(&editor->adsrVisualization);
+        }
+        editor->adsrVisualization.setPaintingEnabled(false);  // CRITICAL: Disable painting
+        editor->adsrVisualization.setVisible(false);
+        editor->adsrVisualization.setAlpha(0.0f);
+        editor->adsrVisualization.setBounds(0, 0, 0, 0);
+    }
+    */
+    
     auto bounds = editor->getLocalBounds();
     
     // Top left: Master gain knob
@@ -65,12 +81,26 @@ void EditorLayoutManager::layoutComponents() {
     editor->paramDisplay3.setBounds(paramStartX + (paramDisplayWidth + paramDisplaySpacing) * 2, paramTopRowY, paramDisplayWidth, paramDisplayHeight);
     editor->paramDisplay4.setBounds(paramStartX + (paramDisplayWidth + paramDisplaySpacing) * 3, paramTopRowY, paramDisplayWidth, paramDisplayHeight);
     
+    // ADSR pill component - positioned above paramDisplay4, right-aligned with BPM display
+    // Note: BPM display is positioned later, so we calculate its position manually
+    int pillWidth = static_cast<int>(paramDisplayWidth * 0.6f);  // 40% less width (60% of original)
+    int pillHeight = 20;  // Small pill height
+    int pillSpacing = 3;  // Small gap above paramDisplay4
+    // Calculate BPM display right edge (BPM is positioned at screenComponentBounds.getX() + screenComponentBounds.getWidth() - 100, width 90)
+    int bpmRightEdge = screenComponentBounds.getX() + screenComponentBounds.getWidth() - 10;  // BPM right edge (100px from right, 90px width = 10px margin)
+    // Right-align pill with BPM display
+    int pillX = bpmRightEdge - pillWidth;
+    int pillY = paramTopRowY - pillHeight - pillSpacing;
+    editor->adsrPillComponent.setBounds(pillX, pillY, pillWidth, pillHeight);
+    
     // Bottom row: Attack, Decay, Sustain, Release
     editor->paramDisplay5.setBounds(paramStartX, paramBottomRowY, paramDisplayWidth, paramDisplayHeight);
     editor->paramDisplay6.setBounds(paramStartX + paramDisplayWidth + paramDisplaySpacing, paramBottomRowY, paramDisplayWidth, paramDisplayHeight);
     editor->paramDisplay7.setBounds(paramStartX + (paramDisplayWidth + paramDisplaySpacing) * 2, paramBottomRowY, paramDisplayWidth, paramDisplayHeight);
     editor->paramDisplay8.setBounds(paramStartX + (paramDisplayWidth + paramDisplaySpacing) * 3, paramBottomRowY, paramDisplayWidth, paramDisplayHeight);
     
+    // OLD ADSR visualization overlay (COMMENTED OUT - replaced with pill component)
+    /*
     // ADSR visualization overlay - centered on waveform area within screen component
     // Get waveform bounds from screen component (relative to screen component)
     auto waveformBounds = editor->screenComponent.getWaveformBounds();
@@ -81,13 +111,20 @@ void EditorLayoutManager::layoutComponents() {
         waveformBounds.getWidth(),
         waveformBounds.getHeight()
     );
-    int adsrHeight = static_cast<int>(waveformBoundsInEditor.getHeight() * 0.4f);  // 40% of waveform height
-    // Center it vertically on the waveform
-    int adsrY = waveformBoundsInEditor.getCentreY() - adsrHeight / 2;
-    editor->adsrVisualization.setBounds(waveformBoundsInEditor.getX(),
-                                        adsrY,
-                                        waveformBoundsInEditor.getWidth(),
-                                        adsrHeight);
+    // Only set bounds for ADSR visualization if it's actually in the component tree AND painting is enabled
+    // This prevents it from being visible on startup
+    if (editor->adsrVisualization.getParentComponent() != nullptr && 
+        editor->adsrVisualization.isPaintingEnabled() && 
+        editor->isADSRDragging) {
+        int adsrHeight = static_cast<int>(waveformBoundsInEditor.getHeight() * 0.4f);  // 40% of waveform height
+        // Center it vertically on the waveform
+        int adsrY = waveformBoundsInEditor.getCentreY() - adsrHeight / 2;
+        editor->adsrVisualization.setBounds(waveformBoundsInEditor.getX(),
+                                            adsrY,
+                                            waveformBoundsInEditor.getWidth(),
+                                            adsrHeight);
+    }
+    */
     
     // ADSR label (overlay in top right of screen)
     editor->adsrLabel.setBounds(screenComponentBounds.getX() + screenComponentBounds.getWidth() - 60,

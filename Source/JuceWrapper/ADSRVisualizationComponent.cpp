@@ -7,14 +7,48 @@ ADSRVisualizationComponent::ADSRVisualizationComponent()
     , releaseMs(20.0f)
     , maxTimeMs(1000.0f)  // Default 1 second display range
     , currentAlpha(0.0f)  // Start invisible
+    , paintingEnabled(false)  // Start with painting disabled
 {
     setOpaque(false);  // Transparent background
     setVisible(false);  // Start hidden
     setAlpha(0.0f);     // Ensure alpha is 0
+    setInterceptsMouseClicks(false, false);  // Don't intercept mouse clicks
+    // CRITICAL: Set bounds to zero to prevent any accidental painting
+    setBounds(0, 0, 0, 0);
 }
 
 ADSRVisualizationComponent::~ADSRVisualizationComponent()
 {
+}
+
+bool ADSRVisualizationComponent::isVisible() const
+{
+    // CRITICAL: Only return true if painting is enabled AND the component is actually visible
+    // This prevents JUCE from treating the component as visible even if it's in the tree
+    if (!paintingEnabled) {
+        return false;  // Always return false if painting is disabled
+    }
+    return Component::isVisible();
+}
+
+void ADSRVisualizationComponent::setBounds(int x, int y, int width, int height)
+{
+    // If painting is not enabled, always set bounds to zero to prevent any rendering
+    if (!paintingEnabled) {
+        Component::setBounds(0, 0, 0, 0);
+    } else {
+        Component::setBounds(x, y, width, height);
+    }
+}
+
+void ADSRVisualizationComponent::setBounds(const juce::Rectangle<int>& bounds)
+{
+    // If painting is not enabled, always set bounds to zero to prevent any rendering
+    if (!paintingEnabled) {
+        Component::setBounds(0, 0, 0, 0);
+    } else {
+        Component::setBounds(bounds);
+    }
 }
 
 void ADSRVisualizationComponent::setADSR(float attack, float decay, float sustain, float release)
@@ -23,9 +57,12 @@ void ADSRVisualizationComponent::setADSR(float attack, float decay, float sustai
     decayMs = decay;
     sustainLevel = sustain;
     releaseMs = release;
-    // Only repaint if we're actually visible (alpha > 0) AND visible
-    if (currentAlpha > 0.0f && isVisible()) {
-        repaint();
+    // Only repaint if painting is enabled, actually visible (alpha > 0), visible, AND in component tree
+    if (paintingEnabled && currentAlpha > 0.0f && isVisible() && getParentComponent() != nullptr) {
+        auto b = getBounds();
+        if (b.getWidth() > 0 && b.getHeight() > 0) {
+            repaint();
+        }
     }
 }
 
@@ -43,14 +80,27 @@ float ADSRVisualizationComponent::amplitudeToY(float amplitude, float height) co
 
 void ADSRVisualizationComponent::paint(juce::Graphics& g)
 {
-    // Don't paint if alpha is 0 or component is not visible
-    // Use a strict check - if alpha is exactly 0 or less, don't paint at all
-    // Check visibility first, then alpha
-    if (!isVisible()) {
-        return;
+    // CRITICAL: Don't paint unless explicitly enabled
+    // This is the primary gate - if painting is not enabled, do nothing
+    if (!paintingEnabled) {
+        return;  // Painting disabled - don't paint at all
+    }
+    
+    // Additional safety checks
+    auto componentBounds = getBounds();
+    if (componentBounds.getWidth() <= 0 || componentBounds.getHeight() <= 0) {
+        return;  // Zero bounds - don't paint
+    }
+    if (getParentComponent() == nullptr) {
+        return;  // Not in component tree - don't paint
+    }
+    // Note: We check Component::isVisible() directly here, not our overridden version,
+    // because we want to respect the actual visibility state for painting
+    if (!Component::isVisible()) {
+        return;  // Not visible - don't paint
     }
     if (currentAlpha <= 0.0f) {
-        return;
+        return;  // Alpha is 0 - don't paint
     }
     
     auto bounds = getLocalBounds().reduced(5.0f); // Add padding

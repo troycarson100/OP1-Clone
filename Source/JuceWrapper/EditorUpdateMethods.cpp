@@ -30,6 +30,8 @@ void EditorUpdateMethods::updateWaveform() {
         editor->sampleRate = sampleRate;
     }
     
+    // OLD ADSR visualization hiding code (COMMENTED OUT - replaced with pill component)
+    /*
     // Ensure ADSR visualization is hidden on startup/update
     // Remove from component tree if it was added
     if (editor->adsrVisualization.getParentComponent() != nullptr) {
@@ -37,6 +39,7 @@ void EditorUpdateMethods::updateWaveform() {
     }
     editor->adsrVisualization.setAlpha(0.0f);
     editor->adsrVisualization.setVisible(false);
+    */
     editor->isADSRDragging = false;
     editor->adsrFadeOutStartTime = 0;
     
@@ -120,11 +123,17 @@ void EditorUpdateMethods::updateWaveform() {
 }
 
 void EditorUpdateMethods::updateADSR() {
+    // Update pill visualization (always visible, always update)
+    editor->adsrPillComponent.setADSR(editor->adsrAttackMs, editor->adsrDecayMs, editor->adsrSustain, editor->adsrReleaseMs);
+    
+    // OLD visualization (COMMENTED OUT)
+    /*
     // Update visualization (only if explicitly being dragged/interacted with)
     // Don't update visualization on startup or when hidden
     if (editor->isADSRDragging) {
         editor->adsrVisualization.setADSR(editor->adsrAttackMs, editor->adsrDecayMs, editor->adsrSustain, editor->adsrReleaseMs);
     }
+    */
     
     // Send to processor (always update the audio processor)
     editor->audioProcessor.setADSR(editor->adsrAttackMs, editor->adsrDecayMs, editor->adsrSustain, editor->adsrReleaseMs);
@@ -205,7 +214,7 @@ void EditorUpdateMethods::updateParameterDisplayLabels() {
         editor->paramDisplay1.setLabel("CUTOFF");
         editor->paramDisplay2.setLabel("RES.");
         editor->paramDisplay3.setLabel("DRIVE");
-        editor->paramDisplay4.setLabel("SPEED");
+        editor->paramDisplay4.setLabel("");  // No function in shift mode (speed removed)
         editor->paramDisplay5.setLabel("L.START");
         editor->paramDisplay6.setLabel("L.END");
         editor->paramDisplay7.setLabel("LOOP");
@@ -268,11 +277,9 @@ void EditorUpdateMethods::updateShiftModeDisplayValues() {
         editor->paramDisplay3.setValue(driveValue);
         editor->paramDisplay3.setValueText(juce::String(editor->lpDriveDb, 1) + "dB");
         
-        // Encoder 4: Speed (time warp, 0.25-4.0x, default 1.0x = 0.5)
-        float speedValue = (editor->timeWarpSpeed - 0.25f) / 3.75f;
-        editor->encoder4.setValue(speedValue);
-        editor->paramDisplay4.setValue(speedValue);
-        editor->paramDisplay4.setValueText(juce::String(editor->timeWarpSpeed, 2) + "x");
+        // Encoder 4: No function in shift mode (speed knob removed)
+        editor->paramDisplay4.setValue(0.0f);
+        editor->paramDisplay4.setValueText("");
         
         // Encoder 5: Loop Start (already handled by waveform)
         // Encoder 6: Loop End (already handled by waveform)

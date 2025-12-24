@@ -170,14 +170,8 @@ void EncoderSetupManager::setupEncoder4() {
     Op1CloneAudioProcessorEditor* ed = editor;
     ed->encoder4.onValueChanged = [ed](float value) {
         if (ed->shiftToggleButton.getToggleState()) {
-            // Shift mode: Encoder 4 = Speed (0.5x to 2.0x, where 1.0x = normal speed)
-            // Map value (0.0-1.0) to speed (0.5x-2.0x)
-            // value = 0.0 -> 0.5x, value = 0.5 -> 1.0x, value = 1.0 -> 2.0x
-            ed->timeWarpSpeed = 0.5f + (value * 1.5f);
-            // Time warp speed removed - fixed at 1.0 (constant duration)
-            // Update parameter display 4 (Speed)
-            ed->paramDisplay4.setValue(value);
-            ed->paramDisplay4.setValueText(juce::String(ed->timeWarpSpeed, 2) + "x");
+            // Shift mode: Encoder 4 - no function (speed knob removed)
+            // Do nothing in shift mode
         } else {
             // Encoder 4: Sample gain (0.0 to 2.0)
             ed->sampleGain = value * 2.0f;
@@ -192,11 +186,8 @@ void EncoderSetupManager::setupEncoder4() {
     ed->encoder4.onButtonPressed = [ed]() {
         // Encoder 4 button pressed - reset to default
         if (ed->shiftToggleButton.getToggleState()) {
-            // Shift mode: Speed default = 1.0x (value = 0.5, which maps to 1.0x)
-            ed->timeWarpSpeed = 1.0f;
-            // Time warp speed removed - fixed at 1.0 (constant duration)
-            ed->encoder4.setValue(0.5f);  // 0.5 maps to 1.0x speed
-            ed->encoder4.onValueChanged(0.5f);
+            // Shift mode: Encoder 4 - no function (speed knob removed)
+            // Do nothing in shift mode
         } else {
             // Normal mode: Sample gain default = 1.0x (value = 0.5)
             ed->encoder4.setValue(0.5f);
@@ -239,12 +230,23 @@ void EncoderSetupManager::setupEncoder5() {
             } else {
                 ed->paramDisplay5.setValueText(juce::String(static_cast<int>(ed->adsrAttackMs)) + "ms");
             }
+            // OLD ADSR visualization show code (COMMENTED OUT - replaced with pill component)
+            // Pill component is always visible, so we just update it
+            ed->updateADSR();  // Update pill visualization
+            /*
+            // OLD ADSR visualization show code (COMMENTED OUT - replaced with pill component)
+            // Pill component is always visible, so we just update it
+            ed->updateADSR();  // Update pill visualization
+            /*
             // Show ADSR visualization when value changes (only if not already showing)
             if (!ed->isADSRDragging && !ed->isResettingADSR) {
                 ed->isADSRDragging = true;
                 // Add to component tree if not already added
                 if (ed->adsrVisualization.getParentComponent() == nullptr) {
+                    ed->adsrVisualization.setPaintingEnabled(true);  // CRITICAL: Enable painting BEFORE setting bounds
                     ed->addAndMakeVisible(&ed->adsrVisualization);
+                    ed->adsrVisualization.setAlwaysOnTop(true);  // Set always on top when showing
+                    ed->setADSRVisualizationBounds();  // Set bounds when adding to tree (now paintingEnabled is true)
                 }
                 // Make visible first, then update
                 ed->adsrVisualization.setAlpha(1.0f);
@@ -252,28 +254,26 @@ void EncoderSetupManager::setupEncoder5() {
                 ed->updateADSR();  // Ensure values are up to date
                 ed->repaint();
             }
+            */
             // Don't reset fade-out timer here - let it continue if already fading
             // The fade-out will be properly set on drag end
         }
     };
     ed->encoder5.onDragStart = [ed]() {
         if (!ed->shiftToggleButton.getToggleState()) {
-            ed->isADSRDragging = true;
-            // Add to component tree if not already added
-            if (ed->adsrVisualization.getParentComponent() == nullptr) {
-                ed->addAndMakeVisible(&ed->adsrVisualization);
-            }
-            // Make visible first, then update
-            ed->adsrVisualization.setAlpha(1.0f);
-            ed->adsrVisualization.setVisible(true);
-            ed->updateADSR();  // Update with current values
-            ed->repaint();  // Repaint the entire editor to ensure visualization shows
+            // OLD ADSR visualization show code (COMMENTED OUT - replaced with pill component)
+            // Pill component is always visible, so we just update it
+            ed->updateADSR();  // Update pill visualization
         }
     };
     ed->encoder5.onDragEnd = [ed]() {
         if (!ed->shiftToggleButton.getToggleState()) {
+            // OLD fade-out code (COMMENTED OUT - replaced with pill component)
+            // Pill component stays visible, no fade-out needed
+            /*
             ed->isADSRDragging = false;
             ed->adsrFadeOutStartTime = juce::Time::currentTimeMillis();
+            */
         }
     };
     ed->encoder5.onButtonPressed = [ed]() {
@@ -285,11 +285,15 @@ void EncoderSetupManager::setupEncoder5() {
         } else {
             // Set flag to prevent showing ADSR visualization during reset
             ed->isResettingADSR = true;
-            // Hide ADSR visualization when resetting
+            // OLD hide ADSR visualization code (COMMENTED OUT - replaced with pill component)
+            // Pill component stays visible, just update it
+            /*
             ed->adsrVisualization.setAlpha(0.0f);
             ed->adsrVisualization.setVisible(false);
+            */
             ed->isADSRDragging = false;
             ed->adsrFadeOutStartTime = 0;
+            ed->updateADSR();  // Update pill visualization with reset values
             // Normal mode: Attack default = 2.0ms (value = 0.0002)
             ed->encoder5.setValue(0.0002f);
             ed->encoder5.onValueChanged(0.0002f);
@@ -333,12 +337,23 @@ void EncoderSetupManager::setupEncoder6() {
             } else {
                 ed->paramDisplay6.setValueText(juce::String(static_cast<int>(ed->adsrDecayMs)) + "ms");
             }
+            // OLD ADSR visualization show code (COMMENTED OUT - replaced with pill component)
+            // Pill component is always visible, so we just update it
+            ed->updateADSR();  // Update pill visualization
+            /*
+            // OLD ADSR visualization show code (COMMENTED OUT - replaced with pill component)
+            // Pill component is always visible, so we just update it
+            ed->updateADSR();  // Update pill visualization
+            /*
             // Show ADSR visualization when value changes (only if not already showing)
             if (!ed->isADSRDragging && !ed->isResettingADSR) {
                 ed->isADSRDragging = true;
                 // Add to component tree if not already added
                 if (ed->adsrVisualization.getParentComponent() == nullptr) {
+                    ed->adsrVisualization.setPaintingEnabled(true);  // CRITICAL: Enable painting BEFORE setting bounds
                     ed->addAndMakeVisible(&ed->adsrVisualization);
+                    ed->adsrVisualization.setAlwaysOnTop(true);  // Set always on top when showing
+                    ed->setADSRVisualizationBounds();  // Set bounds when adding to tree (now paintingEnabled is true)
                 }
                 // Make visible first, then update
                 ed->adsrVisualization.setAlpha(1.0f);
@@ -346,28 +361,26 @@ void EncoderSetupManager::setupEncoder6() {
                 ed->updateADSR();  // Ensure values are up to date
                 ed->repaint();
             }
+            */
             // Don't reset fade-out timer here - let it continue if already fading
             // The fade-out will be properly set on drag end
         }
     };
     ed->encoder6.onDragStart = [ed]() {
         if (!ed->shiftToggleButton.getToggleState()) {
-            ed->isADSRDragging = true;
-            // Add to component tree if not already added
-            if (ed->adsrVisualization.getParentComponent() == nullptr) {
-                ed->addAndMakeVisible(&ed->adsrVisualization);
-            }
-            // Make visible first, then update
-            ed->adsrVisualization.setAlpha(1.0f);
-            ed->adsrVisualization.setVisible(true);
-            ed->updateADSR();  // Update with current values
-            ed->repaint();  // Repaint the entire editor to ensure visualization shows
+            // OLD ADSR visualization show code (COMMENTED OUT - replaced with pill component)
+            // Pill component is always visible, so we just update it
+            ed->updateADSR();  // Update pill visualization
         }
     };
     ed->encoder6.onDragEnd = [ed]() {
         if (!ed->shiftToggleButton.getToggleState()) {
+            // OLD fade-out code (COMMENTED OUT - replaced with pill component)
+            // Pill component stays visible, no fade-out needed
+            /*
             ed->isADSRDragging = false;
             ed->adsrFadeOutStartTime = juce::Time::currentTimeMillis();
+            */
         }
     };
     ed->encoder6.onButtonPressed = [ed]() {
@@ -379,11 +392,15 @@ void EncoderSetupManager::setupEncoder6() {
         } else {
             // Set flag to prevent showing ADSR visualization during reset
             ed->isResettingADSR = true;
-            // Hide ADSR visualization when resetting
+            // OLD hide ADSR visualization code (COMMENTED OUT - replaced with pill component)
+            // Pill component stays visible, just update it
+            /*
             ed->adsrVisualization.setAlpha(0.0f);
             ed->adsrVisualization.setVisible(false);
+            */
             ed->isADSRDragging = false;
             ed->adsrFadeOutStartTime = 0;
+            ed->updateADSR();  // Update pill visualization with reset values
             // Normal mode: Decay default = 0.0ms (value = 0.0)
             ed->encoder6.setValue(0.0f);
             ed->encoder6.onValueChanged(0.0f);
@@ -417,12 +434,23 @@ void EncoderSetupManager::setupEncoder7() {
             // Format value: show as percentage
             int sustainPercent = static_cast<int>(ed->adsrSustain * 100.0f);
             ed->paramDisplay7.setValueText(juce::String(sustainPercent) + "%");
+            // OLD ADSR visualization show code (COMMENTED OUT - replaced with pill component)
+            // Pill component is always visible, so we just update it
+            ed->updateADSR();  // Update pill visualization
+            /*
+            // OLD ADSR visualization show code (COMMENTED OUT - replaced with pill component)
+            // Pill component is always visible, so we just update it
+            ed->updateADSR();  // Update pill visualization
+            /*
             // Show ADSR visualization when value changes (only if not already showing)
             if (!ed->isADSRDragging && !ed->isResettingADSR) {
                 ed->isADSRDragging = true;
                 // Add to component tree if not already added
                 if (ed->adsrVisualization.getParentComponent() == nullptr) {
+                    ed->adsrVisualization.setPaintingEnabled(true);  // CRITICAL: Enable painting BEFORE setting bounds
                     ed->addAndMakeVisible(&ed->adsrVisualization);
+                    ed->adsrVisualization.setAlwaysOnTop(true);  // Set always on top when showing
+                    ed->setADSRVisualizationBounds();  // Set bounds when adding to tree (now paintingEnabled is true)
                 }
                 // Make visible first, then update
                 ed->adsrVisualization.setAlpha(1.0f);
@@ -430,28 +458,26 @@ void EncoderSetupManager::setupEncoder7() {
                 ed->updateADSR();  // Ensure values are up to date
                 ed->repaint();
             }
+            */
             // Don't reset fade-out timer here - let it continue if already fading
             // The fade-out will be properly set on drag end
         }
     };
     ed->encoder7.onDragStart = [ed]() {
         if (!ed->shiftToggleButton.getToggleState()) {
-            ed->isADSRDragging = true;
-            // Add to component tree if not already added
-            if (ed->adsrVisualization.getParentComponent() == nullptr) {
-                ed->addAndMakeVisible(&ed->adsrVisualization);
-            }
-            // Make visible first, then update
-            ed->adsrVisualization.setAlpha(1.0f);
-            ed->adsrVisualization.setVisible(true);
-            ed->updateADSR();  // Update with current values
-            ed->repaint();  // Repaint the entire editor to ensure visualization shows
+            // OLD ADSR visualization show code (COMMENTED OUT - replaced with pill component)
+            // Pill component is always visible, so we just update it
+            ed->updateADSR();  // Update pill visualization
         }
     };
     ed->encoder7.onDragEnd = [ed]() {
         if (!ed->shiftToggleButton.getToggleState()) {
+            // OLD fade-out code (COMMENTED OUT - replaced with pill component)
+            // Pill component stays visible, no fade-out needed
+            /*
             ed->isADSRDragging = false;
             ed->adsrFadeOutStartTime = juce::Time::currentTimeMillis();
+            */
         }
     };
     ed->encoder7.onButtonPressed = [ed]() {
@@ -465,11 +491,15 @@ void EncoderSetupManager::setupEncoder7() {
         } else {
             // Set flag to prevent showing ADSR visualization during reset
             ed->isResettingADSR = true;
-            // Hide ADSR visualization when resetting
+            // OLD hide ADSR visualization code (COMMENTED OUT - replaced with pill component)
+            // Pill component stays visible, just update it
+            /*
             ed->adsrVisualization.setAlpha(0.0f);
             ed->adsrVisualization.setVisible(false);
+            */
             ed->isADSRDragging = false;
             ed->adsrFadeOutStartTime = 0;
+            ed->updateADSR();  // Update pill visualization with reset values
             // Normal mode: Sustain default = 1.0 (value = 1.0)
             ed->encoder7.setValue(1.0f);
             ed->encoder7.onValueChanged(1.0f);
@@ -503,41 +533,26 @@ void EncoderSetupManager::setupEncoder8() {
             } else {
                 ed->paramDisplay8.setValueText(juce::String(static_cast<int>(ed->adsrReleaseMs)) + "ms");
             }
-            // Show ADSR visualization when value changes (only if not already showing)
-            if (!ed->isADSRDragging && !ed->isResettingADSR) {
-                ed->isADSRDragging = true;
-                // Add to component tree if not already added
-                if (ed->adsrVisualization.getParentComponent() == nullptr) {
-                    ed->addAndMakeVisible(&ed->adsrVisualization);
-                }
-                // Make visible first, then update
-                ed->adsrVisualization.setAlpha(1.0f);
-                ed->adsrVisualization.setVisible(true);
-                ed->updateADSR();  // Ensure values are up to date
-                ed->repaint();
-            }
-            // Don't reset fade-out timer here - let it continue if already fading
-            // The fade-out will be properly set on drag end
+            // OLD ADSR visualization show code (COMMENTED OUT - replaced with pill component)
+            // Pill component is always visible, so we just update it
+            ed->updateADSR();  // Update pill visualization
         }
     };
     ed->encoder8.onDragStart = [ed]() {
         if (!ed->shiftToggleButton.getToggleState()) {
-            ed->isADSRDragging = true;
-            // Add to component tree if not already added
-            if (ed->adsrVisualization.getParentComponent() == nullptr) {
-                ed->addAndMakeVisible(&ed->adsrVisualization);
-            }
-            // Make visible first, then update
-            ed->adsrVisualization.setAlpha(1.0f);
-            ed->adsrVisualization.setVisible(true);
-            ed->updateADSR();  // Update with current values
-            ed->repaint();  // Repaint the entire editor to ensure visualization shows
+            // OLD ADSR visualization show code (COMMENTED OUT - replaced with pill component)
+            // Pill component is always visible, so we just update it
+            ed->updateADSR();  // Update pill visualization
         }
     };
     ed->encoder8.onDragEnd = [ed]() {
         if (!ed->shiftToggleButton.getToggleState()) {
+            // OLD fade-out code (COMMENTED OUT - replaced with pill component)
+            // Pill component stays visible, no fade-out needed
+            /*
             ed->isADSRDragging = false;
             ed->adsrFadeOutStartTime = juce::Time::currentTimeMillis();
+            */
         }
     };
     ed->encoder8.onButtonPressed = [ed]() {
@@ -551,11 +566,15 @@ void EncoderSetupManager::setupEncoder8() {
         } else {
             // Set flag to prevent showing ADSR visualization during reset
             ed->isResettingADSR = true;
-            // Hide ADSR visualization when resetting
+            // OLD hide ADSR visualization code (COMMENTED OUT - replaced with pill component)
+            // Pill component stays visible, just update it
+            /*
             ed->adsrVisualization.setAlpha(0.0f);
             ed->adsrVisualization.setVisible(false);
+            */
             ed->isADSRDragging = false;
             ed->adsrFadeOutStartTime = 0;
+            ed->updateADSR();  // Update pill visualization with reset values
             // Normal mode: Release default = 20.0ms (value = 0.001)
             ed->encoder8.setValue(0.001f);
             ed->encoder8.onValueChanged(0.001f);

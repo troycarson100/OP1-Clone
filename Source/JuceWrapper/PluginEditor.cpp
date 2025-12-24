@@ -24,13 +24,29 @@ Op1CloneAudioProcessorEditor::Op1CloneAudioProcessorEditor(Op1CloneAudioProcesso
     // Setup screen component
     addAndMakeVisible(&screenComponent);
     
+    // OLD ADSR visualization (COMMENTED OUT - replaced with pill component)
+    /*
     // Setup ADSR visualization (overlay on screen)
     // Don't add to component tree until it's needed - this prevents any painting on startup
-    adsrVisualization.setAlwaysOnTop(true);
-    adsrVisualization.setAlpha(0.0f);  // Start invisible
-    adsrVisualization.setVisible(false);  // Start hidden
+    // NOTE: setAlwaysOnTop(true) will be called when component is actually shown
     adsrVisualization.setInterceptsMouseClicks(false, false);  // Don't intercept mouse clicks
+    // CRITICAL: Disable painting FIRST before any other operations
+    adsrVisualization.setPaintingEnabled(false);  // CRITICAL: Disable painting on startup
+    // Ensure it's not in component tree on startup
+    if (adsrVisualization.getParentComponent() != nullptr) {
+        adsrVisualization.getParentComponent()->removeChildComponent(&adsrVisualization);
+    }
+    // Set visibility and alpha AFTER ensuring it's not in tree (to avoid repaint)
+    adsrVisualization.setVisible(false);  // Start hidden
+    adsrVisualization.setAlpha(0.0f);  // Start invisible
+    // CRITICAL: Set bounds to zero to prevent any rendering
+    adsrVisualization.setBounds(0, 0, 0, 0);
     // Don't add to component tree yet - will be added when first shown
+    */
+    
+    // NEW: Pill-shaped ADSR visualization (always visible)
+    adsrPillComponent.setInterceptsMouseClicks(false, false);
+    addAndMakeVisible(&adsrPillComponent);
     
     // Setup ADSR label (overlay in top right of screen)
     adsrLabel.setText("ADSR", juce::dontSendNotification);
@@ -75,7 +91,6 @@ Op1CloneAudioProcessorEditor::Op1CloneAudioProcessorEditor(Op1CloneAudioProcesso
     lpResonance = 1.0f;
     lpEnvAmount = 0.0f;  // DEPRECATED - kept for future use
     lpDriveDb = 0.0f;  // Default to 0 dB
-    timeWarpSpeed = 1.0f;  // Default to normal speed (1.0x)
     isPolyphonic = true;  // Default to Poly/Stereo
     loopStartPoint = 0;
     loopEndPoint = 0;
@@ -209,12 +224,12 @@ Op1CloneAudioProcessorEditor::Op1CloneAudioProcessorEditor(Op1CloneAudioProcesso
     adsrSustain = 1.0f;
     adsrReleaseMs = 20.0f;
     
-    // ADSR visualization fade-out tracking
+    // ADSR visualization fade-out tracking (COMMENTED OUT - replaced with pill component)
     isADSRDragging = false;
     isResettingADSR = false;
     adsrFadeOutStartTime = 0;
-    adsrVisualization.setAlpha(0.0f);  // Start invisible
-    adsrVisualization.setVisible(false);  // Start hidden
+    // adsrVisualization.setAlpha(0.0f);  // Start invisible (COMMENTED OUT)
+    // adsrVisualization.setVisible(false);  // Start hidden (COMMENTED OUT)
     
     // Initialize parameter displays with default values
     // Pitch: 0 semitones = 0.5 normalized
@@ -249,14 +264,31 @@ Op1CloneAudioProcessorEditor::Op1CloneAudioProcessorEditor(Op1CloneAudioProcesso
     encoder7.setValue(1.0f);    // Sustain default
     encoder8.setValue(0.001f);  // Release default
     
+    // OLD ADSR visualization hiding code (COMMENTED OUT - replaced with pill component)
+    /*
     // Explicitly ensure ADSR visualization is hidden after initialization
-    adsrVisualization.setAlpha(0.0f);
+    // Remove from component tree if it was somehow added (do this FIRST)
+    if (adsrVisualization.getParentComponent() != nullptr) {
+        adsrVisualization.getParentComponent()->removeChildComponent(&adsrVisualization);
+    }
+    // Set visibility and alpha AFTER removal to avoid triggering repaint
     adsrVisualization.setVisible(false);
+    adsrVisualization.setAlpha(0.0f);
+    adsrVisualization.setPaintingEnabled(false);  // CRITICAL: Disable painting
+    // CRITICAL: Set bounds to zero to prevent any painting
+    adsrVisualization.setBounds(0, 0, 0, 0);
+    */
     isADSRDragging = false;
     
     // Setup encoders using manager (extracted to comply with 500-line rule)
     EncoderSetupManager encoderSetupManager(this);
     encoderSetupManager.setupEncoders();
+    
+    // Initialize shift mode display values if shift is enabled (should be false by default, but ensure sync)
+    // This ensures encoder7 (Loop) is set to 0.0f (OFF) if shift mode is enabled
+    if (shiftToggleButton.getToggleState()) {
+        updateShiftModeDisplayValues();
+    }
     
     // Don't call updateWaveform() here - it will be called from resized() after window is shown
     
@@ -280,9 +312,51 @@ Op1CloneAudioProcessorEditor::~Op1CloneAudioProcessorEditor() {
 void Op1CloneAudioProcessorEditor::paint(juce::Graphics& g) {
     // Dark background
     g.fillAll(juce::Colour(0xFF2A2A2A));
+    
+    // OLD ADSR visualization removal code (COMMENTED OUT - replaced with pill component)
+    /*
+    // CRITICAL: Ensure ADSR visualization is completely disabled ONLY if not being dragged AND not fading
+    // Don't interfere if user is actively interacting with ADSR encoders or if fade-out is in progress
+    // This check happens on EVERY paint to catch any components that might have been added
+    if (!isADSRDragging && adsrFadeOutStartTime == 0) {
+        // Always ensure painting is disabled if not in use
+        if (!adsrVisualization.isPaintingEnabled() && adsrVisualization.getParentComponent() != nullptr) {
+            // Component is in tree but painting is disabled - remove it
+            adsrVisualization.getParentComponent()->removeChildComponent(&adsrVisualization);
+            adsrVisualization.setVisible(false);
+            adsrVisualization.setAlpha(0.0f);
+            adsrVisualization.setBounds(0, 0, 0, 0);
+        } else if (adsrVisualization.getParentComponent() != nullptr && !adsrVisualization.isPaintingEnabled()) {
+            // Component is in tree but shouldn't be - remove it
+            adsrVisualization.getParentComponent()->removeChildComponent(&adsrVisualization);
+            adsrVisualization.setPaintingEnabled(false);  // CRITICAL: Disable painting
+            adsrVisualization.setVisible(false);
+            adsrVisualization.setAlpha(0.0f);
+            adsrVisualization.setBounds(0, 0, 0, 0);
+        }
+    }
+    */
 }
 
 void Op1CloneAudioProcessorEditor::resized() {
+    // OLD ADSR visualization removal code (COMMENTED OUT - replaced with pill component)
+    /*
+    // CRITICAL: Ensure ADSR visualization is NEVER in component tree on startup/resize
+    // Only add it when user actually interacts with ADSR encoders
+    // Remove it immediately if it's in the tree and not being actively used or fading
+    if (!isADSRDragging && adsrFadeOutStartTime == 0) {
+        if (adsrVisualization.getParentComponent() != nullptr) {
+            adsrVisualization.getParentComponent()->removeChildComponent(&adsrVisualization);
+        }
+        // Set visibility and alpha AFTER removal to prevent any painting
+        adsrVisualization.setVisible(false);
+        adsrVisualization.setAlpha(0.0f);
+        adsrVisualization.setPaintingEnabled(false);  // CRITICAL: Disable painting
+        // CRITICAL: Set bounds to zero to prevent any painting
+        adsrVisualization.setBounds(0, 0, 0, 0);
+    }
+    */
+    
     // Delegate layout to manager (extracted to comply with 500-line rule)
     EditorLayoutManager layoutManager(this);
     layoutManager.layoutComponents();
@@ -292,6 +366,19 @@ void Op1CloneAudioProcessorEditor::resized() {
         waveformInitialized = true;
         updateWaveform();
     }
+    
+    // OLD final safety check (COMMENTED OUT - replaced with pill component)
+    /*
+    // Final safety check: ensure ADSR visualization is removed if not being used
+    // But don't interfere if dragging or fading
+    if (!isADSRDragging && adsrFadeOutStartTime == 0 && adsrVisualization.getParentComponent() != nullptr) {
+        adsrVisualization.getParentComponent()->removeChildComponent(&adsrVisualization);
+        adsrVisualization.setVisible(false);
+        adsrVisualization.setAlpha(0.0f);
+        adsrVisualization.setPaintingEnabled(false);  // CRITICAL: Disable painting
+        adsrVisualization.setBounds(0, 0, 0, 0);
+    }
+    */
 }
 
 void Op1CloneAudioProcessorEditor::loadSampleButtonClicked() {
@@ -347,6 +434,31 @@ void Op1CloneAudioProcessorEditor::updateADSR() {
     EditorUpdateMethods updateMethods(this);
     updateMethods.updateADSR();
 }
+
+// OLD setADSRVisualizationBounds (COMMENTED OUT - replaced with pill component)
+/*
+void Op1CloneAudioProcessorEditor::setADSRVisualizationBounds() {
+    // Only set bounds if component is actually in the tree and being used
+    if (adsrVisualization.getParentComponent() == nullptr || !isADSRDragging) {
+        return;  // Don't set bounds if not in tree or not being used
+    }
+    // Set bounds for ADSR visualization based on waveform bounds
+    auto waveformBounds = screenComponent.getWaveformBounds();
+    auto screenBounds = screenComponent.getBounds();
+    juce::Rectangle<int> waveformBoundsInEditor(
+        screenBounds.getX() + waveformBounds.getX(),
+        screenBounds.getY() + waveformBounds.getY(),
+        waveformBounds.getWidth(),
+        waveformBounds.getHeight()
+    );
+    int adsrHeight = static_cast<int>(waveformBoundsInEditor.getHeight() * 0.4f);
+    int adsrY = waveformBoundsInEditor.getCentreY() - adsrHeight / 2;
+    adsrVisualization.setBounds(waveformBoundsInEditor.getX(),
+                                adsrY,
+                                waveformBoundsInEditor.getWidth(),
+                                adsrHeight);
+}
+*/
 
 void Op1CloneAudioProcessorEditor::updateParameterDisplay(const juce::String& paramName, float value) {
     // Delegate to update methods manager (extracted to comply with 500-line rule)
