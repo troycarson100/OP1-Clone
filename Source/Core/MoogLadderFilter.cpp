@@ -37,6 +37,12 @@ void MoogLadderFilter::setCutoff(float cutoff)
     updateCoefficients();
 }
 
+void MoogLadderFilter::setCutoffNoUpdate(float cutoff)
+{
+    cutoffHz = std::max(20.0f, std::min(20000.0f, cutoff));
+    // Don't update coefficients - caller will update when ready
+}
+
 void MoogLadderFilter::setResonance(float res)
 {
     resonance = std::max(0.0f, std::min(4.0f, res));
@@ -70,10 +76,22 @@ void MoogLadderFilter::updateCoefficients()
     g = std::max(0.0f, std::min(1.0f, g));
     
     // Frequency-dependent resonance scaling
-    // At high frequencies (high g), resonance needs more feedback to be audible
+    // At high frequencies (high g), excessive resonance scaling causes audio cutout
+    // Reduce scaling at high frequencies to prevent this issue
     // At low frequencies (low g), resonance is naturally more effective
-    // Scale resonance based on filter response to make it work across full range
-    float resonanceScale = 1.0f + g * 2.0f;  // Scale from 1.0 to 3.0 based on g
+    // Scale resonance based on filter response, but cap at high frequencies
+    float resonanceScale;
+    if (cutoffHz > 10000.0f) {
+        // At high frequencies (>10kHz), use minimal scaling to prevent cutout
+        // Scale from 1.0 to 1.5 instead of 1.0 to 3.0
+        resonanceScale = 1.0f + g * 0.5f;  // Scale from 1.0 to 1.5 based on g
+    } else if (cutoffHz > 5000.0f) {
+        // At mid-high frequencies (5-10kHz), use moderate scaling
+        resonanceScale = 1.0f + g * 1.0f;  // Scale from 1.0 to 2.0 based on g
+    } else {
+        // At lower frequencies (<5kHz), use full scaling for audible resonance
+        resonanceScale = 1.0f + g * 2.0f;  // Scale from 1.0 to 3.0 based on g
+    }
     
     // Apply scaled resonance
     // Base resonance (0-4) scaled by frequency response
@@ -151,7 +169,8 @@ float MoogLadderFilter::process(float input)
     
     // Bypass filter at very high cutoffs (near Nyquist) for clean pass-through
     // CRITICAL: Keep filter state in sync to prevent clicks when switching modes
-    bool isBypassed = (cutoffHz >= 19900.0f);
+    // Lowered bypass threshold to 19500 Hz to ensure smooth transition
+    bool isBypassed = (cutoffHz >= 19500.0f);
     
     if (isBypassed) {
         // At max cutoff, smoothly track filter state with input
@@ -206,9 +225,26 @@ float MoogLadderFilter::process(float input)
     // Apply gain compensation for resonance
     // Higher resonance reduces output level, so we compensate
     // This makes resonance audible across the full frequency range
-    // More compensation needed at high frequencies where resonance is less effective
-    float freqComp = (cutoffHz > 3000.0f) ? 1.0f + resonance * 0.5f : 1.0f + resonance * 0.2f;
-    float gainComp = (cutoffHz < 10000.0f) ? 1.1f : 1.0f;
+    // At high frequencies with resonance, need more compensation to prevent cutout
+    float freqComp;
+    if (cutoffHz > 15000.0f) {
+        // At very high frequencies (>15kHz), resonance can cause severe cutout
+        // Apply stronger compensation to maintain audio level
+        freqComp = 1.0f + resonance * 0.8f;
+    } else if (cutoffHz > 10000.0f) {
+        // At high frequencies (10-15kHz), moderate compensation
+        freqComp = 1.0f + resonance * 0.6f;
+    } else if (cutoffHz > 3000.0f) {
+        // At mid frequencies (3-10kHz), standard compensation
+        freqComp = 1.0f + resonance * 0.5f;
+    } else {
+        // At low frequencies (<3kHz), minimal compensation
+        freqComp = 1.0f + resonance * 0.2f;
+    }
+    
+    // Fixed gain compensation - ensure full range has proper gain
+    // At high frequencies, need more compensation to prevent silence
+    float gainComp = (cutoffHz < 10000.0f) ? 1.1f : 1.15f;  // Increased for high freq to prevent cutout
     return delay[3] * gainComp * freqComp;
 }
 

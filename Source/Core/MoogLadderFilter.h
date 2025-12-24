@@ -26,6 +26,12 @@ public:
     void setCutoff(float cutoffHz);
     
     /**
+     * Set cutoff frequency without recalculating coefficients immediately
+     * Used for smooth parameter changes - coefficients should be updated separately
+     */
+    void setCutoffNoUpdate(float cutoffHz);
+    
+    /**
      * Set resonance (Q factor)
      * Range: 0.0-4.0 (typical Moog range)
      * Higher values = more resonance, can self-oscillate at high values

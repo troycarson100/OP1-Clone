@@ -361,15 +361,19 @@ void SamplerEngine::process(float** output, int numChannels, int numSamples) {
         // Only update smoother target if cutoff actually changed (prevents resetting ramp every block)
         if (std::abs(filterCutoffHz - filterCutoffTarget) > 0.1f) {
             filterCutoffTarget = filterCutoffHz;
-            // Use time-based smoothing (20ms) for smooth filter changes
-            const float filterSmoothTimeMs = 20.0f; // 20ms smoothing time
+            // Use longer time-based smoothing (50ms) for smooth filter changes during rapid knob turns
+            const float filterSmoothTimeMs = 50.0f; // 50ms smoothing time (increased from 20ms)
             int filterSmoothSamples = static_cast<int>(currentSampleRate * filterSmoothTimeMs / 1000.0);
             filterSmoothSamples = std::max(1, std::min(filterSmoothSamples, numSamples * 4)); // Clamp to reasonable range
             cutoffSmoother.setTarget(filterCutoffHz, filterSmoothSamples);
         }
+        // Smooth cutoff per-sample to prevent clicks
+        // Update filter coefficients less frequently (every block) to reduce clicks
         float currentSmoothedCutoff = cutoffSmoother.getNextValue();
+        
         // Only update filter if cutoff changed significantly (prevents crackling from frequent updates)
-        if (std::abs(currentSmoothedCutoff - lastAppliedFilterCutoff) > 1.0f) {
+        // Reduced threshold from 10.0 Hz to 5.0 Hz for smoother response, but still prevents excessive updates
+        if (std::abs(currentSmoothedCutoff - lastAppliedFilterCutoff) > 5.0f) {
             filter.setCutoff(currentSmoothedCutoff);
             lastAppliedFilterCutoff = currentSmoothedCutoff;
         }
@@ -431,8 +435,8 @@ void SamplerEngine::process(float** output, int numChannels, int numSamples) {
             // Only update smoother target if cutoff actually changed (prevents resetting ramp every block)
             if (std::abs(filterCutoffHz - filterCutoffTarget) > 0.1f) {
                 filterCutoffTarget = filterCutoffHz;
-                // Use time-based smoothing (20ms) for smooth filter changes
-                const float filterSmoothTimeMs = 20.0f; // 20ms smoothing time
+                // Use longer time-based smoothing (50ms) for smooth filter changes during rapid knob turns
+                const float filterSmoothTimeMs = 50.0f; // 50ms smoothing time (increased from 20ms)
                 int filterSmoothSamples = static_cast<int>(currentSampleRate * filterSmoothTimeMs / 1000.0);
                 filterSmoothSamples = std::max(1, std::min(filterSmoothSamples, numSamples * 4)); // Clamp to reasonable range
                 cutoffSmoother.setTarget(filterCutoffHz, filterSmoothSamples);
@@ -572,18 +576,18 @@ float SamplerEngine::getEnvelopeValue() const {
 
 void SamplerEngine::setLPFilterCutoff(float cutoffHz) {
     float newCutoff = std::max(20.0f, std::min(20000.0f, cutoffHz));
-    // Only update if cutoff actually changed (prevents unnecessary smoother resets)
-    if (std::abs(newCutoff - filterCutoffHz) > 0.1f) {
-        filterCutoffHz = newCutoff;
-        // Only update filter if it's been prepared (sampleRate > 0)
-        if (currentSampleRate > 0.0) {
-            // Use time-based smoothing (20ms) for smooth filter changes
-            const float filterSmoothTimeMs = 20.0f; // 20ms smoothing time
-            int filterSmoothSamples = static_cast<int>(currentSampleRate * filterSmoothTimeMs / 1000.0);
-            filterSmoothSamples = std::max(1, std::min(filterSmoothSamples, currentBlockSize * 4)); // Clamp to reasonable range
-            cutoffSmoother.setTarget(filterCutoffHz, filterSmoothSamples);
+        // Only update if cutoff actually changed (prevents unnecessary smoother resets)
+        if (std::abs(newCutoff - filterCutoffHz) > 0.1f) {
+            filterCutoffHz = newCutoff;
+            // Only update filter if it's been prepared (sampleRate > 0)
+            if (currentSampleRate > 0.0) {
+                // Use longer time-based smoothing (50ms) for smooth filter changes during rapid knob turns
+                const float filterSmoothTimeMs = 50.0f; // 50ms smoothing time (increased from 20ms)
+                int filterSmoothSamples = static_cast<int>(currentSampleRate * filterSmoothTimeMs / 1000.0);
+                filterSmoothSamples = std::max(1, std::min(filterSmoothSamples, currentBlockSize * 4)); // Clamp to reasonable range
+                cutoffSmoother.setTarget(filterCutoffHz, filterSmoothSamples);
+            }
         }
-    }
 }
 
 void SamplerEngine::setLPFilterResonance(float resonance) {
