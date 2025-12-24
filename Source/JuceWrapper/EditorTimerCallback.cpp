@@ -76,9 +76,10 @@ void EditorTimerCallback::handleTimerCallback() {
     }
     */
     
-    // Update playhead position (yellow line on waveform)
-    double playheadPos = editor->audioProcessor.getPlayheadPosition();
-    float envelopeVal = editor->audioProcessor.getEnvelopeValue();
-    editor->screenComponent.setPlayheadPosition(playheadPos, envelopeVal);
+    // Update playhead positions (yellow lines on waveform - one per active voice)
+    std::vector<double> playheadPositions;
+    std::vector<float> envelopeValues;
+    editor->audioProcessor.getAllActivePlayheads(playheadPositions, envelopeValues);
+    editor->screenComponent.setPlayheadPositions(playheadPositions, envelopeValues);
 }
 

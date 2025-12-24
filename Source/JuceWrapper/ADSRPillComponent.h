@@ -1,9 +1,11 @@
 #pragma once
 
-#include <juce_graphics/juce_graphics.h>
 #include <juce_gui_basics/juce_gui_basics.h>
+#include "JuceVisualizationRenderer.h"
+#include <memory>
 
 // Pill-shaped ADSR visualization component
+// Uses IVisualizationRenderer interface - no direct JUCE Graphics usage
 // Always visible in bottom right corner above paramDisplay4
 class ADSRPillComponent : public juce::Component {
 public:
@@ -16,17 +18,16 @@ public:
     void setADSR(float attackMs, float decayMs, float sustain, float releaseMs);
     
 private:
+    // Renderer instance (JUCE implementation)
+    std::unique_ptr<JuceVisualizationRenderer> renderer;
+    
     float attackMs;
     float decayMs;
     float sustainLevel;  // 0.0 to 1.0
     float releaseMs;
     
-    // Helper: Convert time (ms) to x coordinate within pill bounds
-    float timeToX(float timeMs, float width) const;
-    
-    // Helper: Convert amplitude (0.0-1.0) to y coordinate (inverted, top is 1.0)
-    float amplitudeToY(float amplitude, float height) const;
+    // Build Core::ADSRData from current state
+    Core::ADSRData buildADSRData() const;
     
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ADSRPillComponent)
 };
-

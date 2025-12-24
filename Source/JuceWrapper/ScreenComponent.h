@@ -17,6 +17,9 @@ public:
     // Set sample data for waveform visualization
     void setSampleData(const std::vector<float>& data);
     
+    // Set stereo sample data for waveform visualization
+    void setStereoSampleData(const std::vector<float>& leftChannel, const std::vector<float>& rightChannel);
+    
     // Set start/end points and sample gain for visualization
     void setStartPoint(int sampleIndex);
     void setEndPoint(int sampleIndex);
@@ -27,7 +30,8 @@ public:
     void setLoopEndPoint(int sampleIndex);
     void setLoopEnabled(bool enabled);
     
-    void setPlayheadPosition(double sampleIndex, float envelopeValue);
+    void setPlayheadPosition(double sampleIndex, float envelopeValue);  // DEPRECATED - use setPlayheadPositions
+    void setPlayheadPositions(const std::vector<double>& positions, const std::vector<float>& envelopeValues);
     
     // Get waveform component bounds (for ADSR overlay positioning)
     juce::Rectangle<int> getWaveformBounds() const { return waveformComponent.getBounds(); }

@@ -56,6 +56,7 @@ public:
     
     // Get sample data for visualization (thread-safe)
     void getSampleDataForVisualization(std::vector<float>& outData) const;
+    void getStereoSampleDataForVisualization(std::vector<float>& outLeft, std::vector<float>& outRight) const;
     
     // Get source sample rate (for time calculations)
     double getSourceSampleRate() const;
@@ -110,6 +111,9 @@ public:
     
     // Get envelope value (for UI fade out)
     float getEnvelopeValue() const;
+    
+    // Get all active voice playhead positions and envelope values (for multi-voice visualization)
+    void getAllActivePlayheads(std::vector<double>& positions, std::vector<float>& envelopeValues) const;
     int getEndPoint() const;
     float getSampleGain() const;
     

@@ -92,6 +92,10 @@ public:
     // Returns 0.0 if no active voice
     float getEnvelopeValue() const;
     
+    // Get all active voice playhead positions and envelope values (for multi-voice visualization)
+    // Fills the output vectors with playhead positions and envelope values for all active voices
+    void getAllActivePlayheads(std::vector<double>& positions, std::vector<float>& envelopeValues) const;
+    
 private:
     std::array<SamplerVoice, MAX_VOICES> voices;
     int nextVoiceIndex; // For round-robin allocation

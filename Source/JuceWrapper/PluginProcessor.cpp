@@ -11,14 +11,18 @@
 // In a real implementation, you'd load a WAV file from BinaryData
 static void generateTestTone(juce::AudioBuffer<float>& buffer, double sampleRate, float frequency, float duration) {
     int numSamples = static_cast<int>(sampleRate * duration);
-    buffer.setSize(1, numSamples, false, true, false);
+    // Generate stereo test tone (2 channels)
+    buffer.setSize(2, numSamples, false, true, false);
     
-    float* channelData = buffer.getWritePointer(0);
+    float* leftChannelData = buffer.getWritePointer(0);
+    float* rightChannelData = buffer.getWritePointer(1);
     float phase = 0.0f;
     float phaseIncrement = static_cast<float>(2.0 * juce::MathConstants<double>::pi * frequency / sampleRate);
     
     for (int i = 0; i < numSamples; ++i) {
-        channelData[i] = std::sin(phase) * 0.5f;
+        float sample = std::sin(phase) * 0.5f;
+        leftChannelData[i] = sample;
+        rightChannelData[i] = sample;  // Same signal in both channels for stereo
         phase += phaseIncrement;
         if (phase > 2.0f * juce::MathConstants<float>::pi) {
             phase -= 2.0f * juce::MathConstants<float>::pi;
@@ -208,6 +212,10 @@ float Op1CloneAudioProcessor::getEnvelopeValue() const {
     return adapter.getEnvelopeValue();
 }
 
+void Op1CloneAudioProcessor::getAllActivePlayheads(std::vector<double>& positions, std::vector<float>& envelopeValues) const {
+    adapter.getAllActivePlayheads(positions, envelopeValues);
+}
+
 int Op1CloneAudioProcessor::getEndPoint() const {
     return adapter.getEndPoint();
 }
@@ -304,6 +312,10 @@ bool Op1CloneAudioProcessor::loadSampleFromFile(const juce::File& file) {
 
 void Op1CloneAudioProcessor::getSampleDataForVisualization(std::vector<float>& outData) const {
     adapter.getSampleDataForVisualization(outData);
+}
+
+void Op1CloneAudioProcessor::getStereoSampleDataForVisualization(std::vector<float>& outLeft, std::vector<float>& outRight) const {
+    adapter.getStereoSampleDataForVisualization(outLeft, outRight);
 }
 
 double Op1CloneAudioProcessor::getSourceSampleRate() const {

@@ -110,6 +110,9 @@ public:
     // Get envelope value (for UI fade out)
     float getEnvelopeValue() const;
     
+    // Get all active voice playhead positions and envelope values (for multi-voice visualization)
+    void getAllActivePlayheads(std::vector<double>& positions, std::vector<float>& envelopeValues) const;
+    
     // Get instrumentation metrics (thread-safe, atomic reads)
     float getBlockPeak() const { return blockPeak.load(std::memory_order_acquire); }
     int getClippedSamples() const { return clippedSamples.load(std::memory_order_acquire); }

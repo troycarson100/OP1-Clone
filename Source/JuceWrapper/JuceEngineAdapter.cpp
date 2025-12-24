@@ -31,50 +31,51 @@ void JuceEngineAdapter::setSample(juce::AudioBuffer<float>& buffer, double sourc
     
     this->sourceSampleRate = sourceSampleRate;
     // Extract sample data from JUCE buffer
-    // For now, use left channel only (mono)
+    // Extract both left and right channels if stereo, otherwise use left channel only
     int numSamples = buffer.getNumSamples();
     int numChannels = buffer.getNumChannels();
     
-    // THREAD-SAFETY FIX: Extract data to temporary buffer first, then pass to engine
+    // THREAD-SAFETY FIX: Extract data to temporary buffers first, then pass to engine
     // Engine will make its own copy, so we don't need to update adapter's vector yet
-    std::vector<float> tempData(static_cast<size_t>(numSamples));
+    std::vector<float> tempLeftData(static_cast<size_t>(numSamples));
+    std::vector<float> tempRightData;  // Only allocate if stereo
     
     // #region agent log
     {
         std::ofstream log("/Users/troycarson/Documents/JUCE Projects/OP1-Clone/.cursor/debug.log", std::ios::app);
         if (log.is_open()) {
-            log << "{\"sessionId\":\"debug-session\",\"runId\":\"run1\",\"hypothesisId\":\"H3\",\"location\":\"JuceEngineAdapter.cpp:38\",\"message\":\"temp buffer created\",\"data\":{\"numSamples\":" << numSamples << "},\"timestamp\":" << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() << "}\n";
+            log << "{\"sessionId\":\"debug-session\",\"runId\":\"run1\",\"hypothesisId\":\"H3\",\"location\":\"JuceEngineAdapter.cpp:38\",\"message\":\"temp buffer created\",\"data\":{\"numSamples\":" << numSamples << ",\"numChannels\":" << numChannels << "},\"timestamp\":" << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() << "}\n";
         }
     }
     // #endregion
     
     if (numChannels > 0 && numSamples > 0) {
-        const float* channelData = buffer.getReadPointer(0);
+        // Extract left channel (channel 0)
+        const float* leftChannelData = buffer.getReadPointer(0);
+        if (leftChannelData != nullptr) {
+            std::copy(leftChannelData, leftChannelData + numSamples, tempLeftData.begin());
+        }
         
-        // #region agent log
-        {
-            std::ofstream log("/Users/troycarson/Documents/JUCE Projects/OP1-Clone/.cursor/debug.log", std::ios::app);
-            if (log.is_open()) {
-                log << "{\"sessionId\":\"debug-session\",\"runId\":\"run1\",\"hypothesisId\":\"H3\",\"location\":\"JuceEngineAdapter.cpp:47\",\"message\":\"before copy to temp\",\"data\":{\"channelDataPtr\":" << (void*)channelData << ",\"numSamples\":" << numSamples << "},\"timestamp\":" << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() << "}\n";
+        // Extract right channel if stereo (channel 1)
+        if (numChannels >= 2) {
+            tempRightData.resize(static_cast<size_t>(numSamples));
+            const float* rightChannelData = buffer.getReadPointer(1);
+            if (rightChannelData != nullptr) {
+                std::copy(rightChannelData, rightChannelData + numSamples, tempRightData.begin());
             }
         }
-        // #endregion
-        
-        if (channelData != nullptr) {
-            std::copy(channelData, channelData + numSamples, tempData.begin());
-        }
         
         // #region agent log
         {
             std::ofstream log("/Users/troycarson/Documents/JUCE Projects/OP1-Clone/.cursor/debug.log", std::ios::app);
             if (log.is_open()) {
-                log << "{\"sessionId\":\"debug-session\",\"runId\":\"run1\",\"hypothesisId\":\"H3\",\"location\":\"JuceEngineAdapter.cpp:57\",\"message\":\"after copy to temp\",\"data\":{},\"timestamp\":" << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() << "}\n";
+                log << "{\"sessionId\":\"debug-session\",\"runId\":\"run1\",\"hypothesisId\":\"H3\",\"location\":\"JuceEngineAdapter.cpp:57\",\"message\":\"after copy to temp\",\"data\":{\"isStereo\":" << (numChannels >= 2 ? 1 : 0) << "},\"timestamp\":" << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() << "}\n";
             }
         }
         // #endregion
     } else {
         // Empty buffer - fill with zeros
-        std::fill(tempData.begin(), tempData.end(), 0.0f);
+        std::fill(tempLeftData.begin(), tempLeftData.end(), 0.0f);
     }
     
     // Create immutable SampleData object on heap (stable, thread-safe)
@@ -83,7 +84,8 @@ void JuceEngineAdapter::setSample(juce::AudioBuffer<float>& buffer, double sourc
     auto newSampleData = std::make_shared<Core::SampleData>();
     
     // Move tempData into SampleData (tempData is already a copy from AudioBuffer)
-    newSampleData->mono = std::move(tempData);
+    newSampleData->mono = std::move(tempLeftData);
+    newSampleData->right = std::move(tempRightData);
     newSampleData->length = numSamples;
     newSampleData->sourceSampleRate = sourceSampleRate;
     
@@ -124,8 +126,9 @@ void JuceEngineAdapter::setSample(juce::AudioBuffer<float>& buffer, double sourc
     }
     // #endregion
     
-    // Update adapter's vector for visualization (copy from SampleData)
+    // Update adapter's vectors for visualization (copy from SampleData)
     this->sampleData = newSampleData->mono;
+    this->rightChannelData = newSampleData->right;
     
     // #region agent log
     {
@@ -213,8 +216,14 @@ float JuceEngineAdapter::getGain() const {
 }
 
 void JuceEngineAdapter::getSampleDataForVisualization(std::vector<float>& outData) const {
-    // Thread-safe: copy sample data for visualization
+    // Thread-safe: copy sample data for visualization (mono/left channel only for backward compatibility)
     outData = sampleData;
+}
+
+void JuceEngineAdapter::getStereoSampleDataForVisualization(std::vector<float>& outLeft, std::vector<float>& outRight) const {
+    // Thread-safe: copy stereo sample data for visualization
+    outLeft = sampleData;
+    outRight = rightChannelData;
 }
 
 double JuceEngineAdapter::getSourceSampleRate() const {
@@ -231,6 +240,10 @@ double JuceEngineAdapter::getPlayheadPosition() const {
 
 float JuceEngineAdapter::getEnvelopeValue() const {
     return engine.getEnvelopeValue();
+}
+
+void JuceEngineAdapter::getAllActivePlayheads(std::vector<double>& positions, std::vector<float>& envelopeValues) const {
+    engine.getAllActivePlayheads(positions, envelopeValues);
 }
 
 void JuceEngineAdapter::convertMidiBuffer(juce::MidiBuffer& midiMessages, int numSamples) {

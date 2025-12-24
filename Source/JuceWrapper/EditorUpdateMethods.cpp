@@ -12,17 +12,22 @@ EditorUpdateMethods::EditorUpdateMethods(Op1CloneAudioProcessorEditor* editor)
 }
 
 void EditorUpdateMethods::updateWaveform() {
-    // Get sample data from processor and update screen
-    std::vector<float> sampleData;
-    editor->audioProcessor.getSampleDataForVisualization(sampleData);
+    // Get stereo sample data from processor and update screen
+    std::vector<float> leftChannel, rightChannel;
+    editor->audioProcessor.getStereoSampleDataForVisualization(leftChannel, rightChannel);
     
     // Safety check: if no sample data, just clear the screen and return early
-    if (sampleData.empty()) {
-        editor->screenComponent.setSampleData(sampleData);
+    if (leftChannel.empty()) {
+        editor->screenComponent.setSampleData(leftChannel);
         return;
     }
     
-    editor->screenComponent.setSampleData(sampleData);
+    // Use stereo data if right channel is available, otherwise use mono
+    if (!rightChannel.empty()) {
+        editor->screenComponent.setStereoSampleData(leftChannel, rightChannel);
+    } else {
+        editor->screenComponent.setSampleData(leftChannel);
+    }
     
     // Get source sample rate from processor (for time calculations)
     double sampleRate = editor->audioProcessor.getSourceSampleRate();
@@ -44,7 +49,7 @@ void EditorUpdateMethods::updateWaveform() {
     editor->adsrFadeOutStartTime = 0;
     
     // Update sample length for encoder mapping
-    int newSampleLength = static_cast<int>(sampleData.size());
+    int newSampleLength = static_cast<int>(leftChannel.size());
     
     // If this is a new sample (different length) or first load, reset to full sample view
     bool isNewSample = (newSampleLength != editor->sampleLength);

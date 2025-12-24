@@ -1,10 +1,12 @@
 #pragma once
 
-#include <juce_graphics/juce_graphics.h>
 #include <juce_gui_basics/juce_gui_basics.h>
+#include "JuceVisualizationRenderer.h"
 #include <vector>
+#include <memory>
 
 // OP-1 style waveform visualizer
+// Uses IVisualizationRenderer interface - no direct JUCE Graphics usage
 class WaveformComponent : public juce::Component {
 public:
     WaveformComponent();
@@ -13,8 +15,11 @@ public:
     void paint(juce::Graphics& g) override;
     void resized() override;
     
-    // Set sample data to visualize
+    // Set sample data to visualize (mono - will be stored in leftChannel)
     void setSampleData(const std::vector<float>& data);
+    
+    // Set stereo sample data to visualize (left and right channels)
+    void setStereoSampleData(const std::vector<float>& leftChannel, const std::vector<float>& rightChannel);
     
     // Set start/end points for visual markers
     void setStartPoint(int sampleIndex);
@@ -28,14 +33,22 @@ public:
     void setLoopEndPoint(int sampleIndex);
     void setLoopEnabled(bool enabled);
     
-    // Set playhead position (for yellow line indicator)
+    // Set playhead position (for yellow line indicator) - DEPRECATED, use setPlayheadPositions
     void setPlayheadPosition(double sampleIndex, float envelopeValue);
+    
+    // Set playhead positions (one per active voice)
+    void setPlayheadPositions(const std::vector<double>& positions, const std::vector<float>& envelopeValues);
     
     // Clear waveform
     void clear();
-    
+
 private:
-    std::vector<float> sampleData;
+    // Renderer instance (JUCE implementation)
+    std::unique_ptr<JuceVisualizationRenderer> renderer;
+    
+    // Sample data (stereo: left and right channels)
+    std::vector<float> leftChannelData;
+    std::vector<float> rightChannelData;
     
     // Sample editing parameters
     int startPoint;
@@ -47,19 +60,23 @@ private:
     int loopEndPoint;
     bool loopEnabled;
     
-    // Playhead position (for yellow line indicator)
-    double playheadPosition;
-    float envelopeValue; // For fade out during release
+    // Playhead positions (one per active voice) with smoothing
+    struct SmoothedPlayhead {
+        double currentPos;      // Current smoothed position
+        double targetPos;        // Target position to smooth towards
+        float envelopeValue;     // Envelope value for this voice
+        bool active;             // Whether this playhead is active
+        
+        SmoothedPlayhead() : currentPos(-1.0), targetPos(-1.0), envelopeValue(0.0f), active(false) {}
+    };
+    std::vector<SmoothedPlayhead> smoothedPlayheads;
     
-    // OP-1 style colors
-    juce::Colour waveformColor;
-    juce::Colour backgroundColor;
-    juce::Colour gridColor;
-    juce::Colour markerColor; // Color for start/end point markers
-    juce::Colour playheadColor; // Yellow color for playhead line
+    // Smoothing coefficient (0.0 = no smoothing, 1.0 = full smoothing)
+    static constexpr float smoothingCoeff = 0.08f;  // Very smooth movement (8% towards target per frame)
     
-    // Draw waveform using min/max method (OP-1 style)
-    void drawWaveform(juce::Graphics& g, juce::Rectangle<int> bounds);
+    // Build Core::WaveformData from current state
+    Core::WaveformData buildWaveformData() const;
+    
+    // Update smoothed playhead positions
+    void updateSmoothedPlayheads(const std::vector<double>& positions, const std::vector<float>& envelopeValues);
 };
-
-

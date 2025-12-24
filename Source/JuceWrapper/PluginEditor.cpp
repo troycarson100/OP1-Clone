@@ -221,10 +221,10 @@ Op1CloneAudioProcessorEditor::Op1CloneAudioProcessorEditor(Op1CloneAudioProcesso
     startTimer(100);
     
     // ADSR parameters (in milliseconds, except sustain which is 0.0-1.0)
-    adsrAttackMs = 2.0f;
+    adsrAttackMs = 800.0f;  // Default: 800ms
     adsrDecayMs = 0.0f;
     adsrSustain = 1.0f;
-    adsrReleaseMs = 20.0f;
+    adsrReleaseMs = 1000.0f;  // Default: 1000ms (1s)
     
     // ADSR visualization fade-out tracking (COMMENTED OUT - replaced with pill component)
     isADSRDragging = false;
@@ -246,25 +246,25 @@ Op1CloneAudioProcessorEditor::Op1CloneAudioProcessorEditor(Op1CloneAudioProcesso
     // Gain: 1.0x = 0.5 normalized
     paramDisplay4.setValue(0.5f);
     paramDisplay4.setValueText("1.00x");
-    // Attack: 2ms = 0.0002 normalized
-    paramDisplay5.setValue(0.0002f);
-    paramDisplay5.setValueText("2ms");
+    // Attack: 800ms = 0.08 normalized (800/10000)
+    paramDisplay5.setValue(0.08f);
+    paramDisplay5.setValueText("0.80s");
     // Decay: 0ms = 0.0 normalized
     paramDisplay6.setValue(0.0f);
     paramDisplay6.setValueText("0ms");
     // Sustain: 1.0 = 1.0 normalized
     paramDisplay7.setValue(1.0f);
     paramDisplay7.setValueText("100%");
-    // Release: 20ms = 0.001 normalized
-    paramDisplay8.setValue(0.001f);
-    paramDisplay8.setValueText("20ms");
+    // Release: 1000ms = 0.05 normalized (1000/20000)
+    paramDisplay8.setValue(0.05f);
+    paramDisplay8.setValueText("1.00s");
     
     // Initialize encoder 5-8 to ADSR defaults
     // Note: setValue already uses dontSendNotification, so callbacks won't fire
-    encoder5.setValue(0.0002f); // Attack default
+    encoder5.setValue(0.08f);   // Attack default (800ms = 0.08 normalized)
     encoder6.setValue(0.0f);    // Decay default
     encoder7.setValue(1.0f);    // Sustain default
-    encoder8.setValue(0.001f);  // Release default
+    encoder8.setValue(0.05f);   // Release default (1000ms = 0.05 normalized)
     
     // OLD ADSR visualization hiding code (COMMENTED OUT - replaced with pill component)
     /*

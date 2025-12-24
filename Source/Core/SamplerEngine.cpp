@@ -574,6 +574,10 @@ float SamplerEngine::getEnvelopeValue() const {
     return voiceManager.getEnvelopeValue();
 }
 
+void SamplerEngine::getAllActivePlayheads(std::vector<double>& positions, std::vector<float>& envelopeValues) const {
+    voiceManager.getAllActivePlayheads(positions, envelopeValues);
+}
+
 void SamplerEngine::setLPFilterCutoff(float cutoffHz) {
     float newCutoff = std::max(20.0f, std::min(20000.0f, cutoffHz));
         // Only update if cutoff actually changed (prevents unnecessary smoother resets)

@@ -104,22 +104,30 @@ namespace Core {
 2. **Use a pure C++ third-party library**
 3. **Create an abstract interface in Core**, implement with JUCE in JuceWrapper
 
-Example of #3:
+Example of #3 (Visualization Pattern):
 ```cpp
 // Core/IVisualizationRenderer.h (pure C++ interface)
 namespace Core {
     class IVisualizationRenderer {
-        virtual void renderWaveform(const WaveformData&) = 0;
+        virtual void renderWaveform(const WaveformData&, const Rectangle&) = 0;
     };
 }
 
 // JuceWrapper/JuceVisualizationRenderer.cpp (JUCE implementation)
 class JuceVisualizationRenderer : public Core::IVisualizationRenderer {
-    void renderWaveform(const Core::WaveformData& data) override {
-        // Use juce::Graphics here
+    void renderWaveform(const Core::WaveformData& data, const Core::Rectangle& bounds) override {
+        // Use juce::Graphics here - this is the ONLY place JUCE Graphics is used
     }
 };
+
+// JuceWrapper/WaveformComponent.cpp (uses interface, not JUCE directly)
+void WaveformComponent::paint(juce::Graphics& g) {
+    renderer->setGraphicsContext(&g);
+    renderer->renderWaveform(data, bounds);  // Calls through interface
+}
 ```
+
+**Note**: This pattern is already implemented for visualization. See `Core/IVisualizationRenderer.h` and `JuceWrapper/JuceVisualizationRenderer.cpp`.
 
 ## Enforcement
 

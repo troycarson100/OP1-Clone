@@ -335,5 +335,17 @@ float VoiceManager::getEnvelopeValue() const {
     return maxEnvelope;
 }
 
+void VoiceManager::getAllActivePlayheads(std::vector<double>& positions, std::vector<float>& envelopeValues) const {
+    positions.clear();
+    envelopeValues.clear();
+    
+    for (const auto& voice : voices) {
+        if (voice.isPlaying() && voice.getEnvelopeValue() > 0.0f) {
+            positions.push_back(voice.getPlayhead());
+            envelopeValues.push_back(voice.getEnvelopeValue());
+        }
+    }
+}
+
 } // namespace Core
 

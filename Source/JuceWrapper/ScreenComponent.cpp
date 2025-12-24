@@ -36,6 +36,10 @@ void ScreenComponent::setSampleData(const std::vector<float>& data) {
     waveformComponent.setSampleData(data);
 }
 
+void ScreenComponent::setStereoSampleData(const std::vector<float>& leftChannel, const std::vector<float>& rightChannel) {
+    waveformComponent.setStereoSampleData(leftChannel, rightChannel);
+}
+
 void ScreenComponent::setStartPoint(int sampleIndex) {
     waveformComponent.setStartPoint(sampleIndex);
 }
@@ -61,6 +65,17 @@ void ScreenComponent::setLoopEnabled(bool enabled) {
 }
 
 void ScreenComponent::setPlayheadPosition(double sampleIndex, float envelopeValue) {
-    waveformComponent.setPlayheadPosition(sampleIndex, envelopeValue);
+    // DEPRECATED - use setPlayheadPositions for multi-voice support
+    std::vector<double> positions;
+    std::vector<float> envelopeVals;
+    if (sampleIndex >= 0.0 && envelopeValue > 0.0f) {
+        positions.push_back(sampleIndex);
+        envelopeVals.push_back(envelopeValue);
+    }
+    waveformComponent.setPlayheadPositions(positions, envelopeVals);
+}
+
+void ScreenComponent::setPlayheadPositions(const std::vector<double>& positions, const std::vector<float>& envelopeValues) {
+    waveformComponent.setPlayheadPositions(positions, envelopeValues);
 }
 

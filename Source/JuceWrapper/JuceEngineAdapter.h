@@ -45,8 +45,11 @@ public:
     // Get current gain
     float getGain() const;
     
-    // Get sample data for visualization (thread-safe copy)
+    // Get sample data for visualization (thread-safe copy) - DEPRECATED, use getStereoSampleDataForVisualization
     void getSampleDataForVisualization(std::vector<float>& outData) const;
+    
+    // Get stereo sample data for visualization (thread-safe copy)
+    void getStereoSampleDataForVisualization(std::vector<float>& outLeft, std::vector<float>& outRight) const;
     
     // Get source sample rate (for time calculations)
     double getSourceSampleRate() const;
@@ -59,6 +62,9 @@ public:
     
     // Get envelope value (for UI fade out)
     float getEnvelopeValue() const;
+    
+    // Get all active voice playhead positions and envelope values (for multi-voice visualization)
+    void getAllActivePlayheads(std::vector<double>& positions, std::vector<float>& envelopeValues) const;
     
     // Set LP filter parameters
     void setLPFilterCutoff(float cutoffHz);
@@ -97,7 +103,8 @@ private:
     std::vector<Core::MidiEvent> midiEventBuffer;
     
     // Sample data storage (owned by adapter)
-    std::vector<float> sampleData;
+    std::vector<float> sampleData;        // Left channel (or mono)
+    std::vector<float> rightChannelData;   // Right channel (empty if mono)
     
     // Source sample rate (stored when sample is loaded)
     double sourceSampleRate;

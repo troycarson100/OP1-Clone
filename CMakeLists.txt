@@ -75,6 +75,8 @@ target_sources(Op1Clone PRIVATE
     # Source/JuceWrapper/ADSRVisualizationComponent.h
     Source/JuceWrapper/ADSRPillComponent.cpp
     Source/JuceWrapper/ADSRPillComponent.h
+    Source/JuceWrapper/JuceVisualizationRenderer.cpp
+    Source/JuceWrapper/JuceVisualizationRenderer.h
     Source/JuceWrapper/MidiInputHandler.cpp
     Source/JuceWrapper/MidiInputHandler.h
     Source/JuceWrapper/MidiStatusComponent.cpp
