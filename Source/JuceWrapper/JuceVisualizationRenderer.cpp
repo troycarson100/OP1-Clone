@@ -286,6 +286,7 @@ void JuceVisualizationRenderer::drawLoopMarkers(const Core::WaveformData& data, 
                 ((static_cast<float>(data.loopEndPoint - visibleStart) / static_cast<float>(visibleLength)) * static_cast<float>(width));
             int endXInt = static_cast<int>(loopEndX);
             
+            graphics->setColour(juce::Colours::white);  // White line for loop end
             graphics->drawVerticalLine(endXInt, lineTop, lineBottom);
             
             // Draw "E" flag
@@ -627,6 +628,7 @@ void JuceVisualizationRenderer::drawLoopMarkersForChannel(const Core::WaveformDa
             ((static_cast<float>(data.loopEndPoint - visibleStart) / static_cast<float>(visibleLength)) * static_cast<float>(width));
         int endXInt = static_cast<int>(loopEndX);
 
+        graphics->setColour(juce::Colours::white);  // White line for loop end
         graphics->drawVerticalLine(endXInt, lineTop, lineBottom);
 
         float flagSize = 16.0f;

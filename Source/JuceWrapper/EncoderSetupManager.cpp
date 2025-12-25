@@ -22,6 +22,38 @@ void EncoderSetupManager::setupEncoders() {
 void EncoderSetupManager::setupEncoder1() {
     Op1CloneAudioProcessorEditor* ed = editor;  // Capture editor pointer, not 'this'
     ed->encoder1.onValueChanged = [ed](float value) {
+        // Check if instrument menu is open - if so, handle navigation
+        if (ed->instrumentMenuOpen) {
+            // Calculate direction of change
+            float delta = value - ed->lastEncoder1ValueForMenu;
+            
+            // Normalize delta to determine direction (handle wrap-around)
+            if (delta > 0.5f) delta -= 1.0f;  // Wrapped from high to low
+            if (delta < -0.5f) delta += 1.0f;  // Wrapped from low to high
+            
+            // Only respond to significant changes
+            if (std::abs(delta) > 0.01f) {
+                int currentIndex = ed->screenComponent.getInstrumentMenuSelectedIndex();
+                int numInstruments = 2;  // Sampler, JNO
+                
+                if (delta > 0) {
+                    // Scrolled up - move selection down
+                    currentIndex = (currentIndex + 1) % numInstruments;
+                } else {
+                    // Scrolled down - move selection up
+                    currentIndex = (currentIndex - 1 + numInstruments) % numInstruments;
+                }
+                
+                ed->screenComponent.setInstrumentMenuSelectedIndex(currentIndex);
+                ed->repaint();
+            }
+            
+            ed->lastEncoder1ValueForMenu = value;
+            return;  // Don't process normal encoder behavior when menu is open
+        }
+        
+        ed->lastEncoder1ValueForMenu = value;
+        
         if (ed->shiftToggleButton.getToggleState()) {
             // Shift mode: Encoder 1 = LP Filter Cutoff (20-20000 Hz)
             // Map 0-1 to 20-20000 Hz (logarithmic)
@@ -51,6 +83,13 @@ void EncoderSetupManager::setupEncoder1() {
         }
     };
     ed->encoder1.onButtonPressed = [ed]() {
+        // Check if instrument menu is open - if so, select instrument
+        if (ed->instrumentMenuOpen) {
+            ed->screenComponent.selectInstrument();
+            ed->repaint();
+            return;  // Don't process normal button behavior when menu is open
+        }
+        
         // Encoder 1 button pressed - reset to default
         if (ed->shiftToggleButton.getToggleState()) {
             // Shift mode: Cutoff default = 20kHz (fully open, value = 1.0)

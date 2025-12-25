@@ -8,6 +8,12 @@ ScreenComponent::ScreenComponent() {
     // Add waveform component
     addAndMakeVisible(&waveformComponent);
     
+    // Add instrument menu (hidden by default)
+    // Menu should be on top and opaque to cover everything
+    addChildComponent(&instrumentMenu);
+    instrumentMenu.setVisible(false);
+    instrumentMenu.setAlwaysOnTop(true);
+    
     setOpaque(true);
 }
 
@@ -30,6 +36,9 @@ void ScreenComponent::resized() {
     int paramDisplayAreaHeight = 80;
     bounds.removeFromBottom(paramDisplayAreaHeight);
     waveformComponent.setBounds(bounds);
+    
+    // Instrument menu fills entire screen component
+    instrumentMenu.setBounds(getLocalBounds());
 }
 
 void ScreenComponent::setSampleData(const std::vector<float>& data) {
@@ -77,5 +86,40 @@ void ScreenComponent::setPlayheadPosition(double sampleIndex, float envelopeValu
 
 void ScreenComponent::setPlayheadPositions(const std::vector<double>& positions, const std::vector<float>& envelopeValues) {
     waveformComponent.setPlayheadPositions(positions, envelopeValues);
+}
+
+void ScreenComponent::showInstrumentMenu(bool show) {
+    instrumentMenu.setMenuVisible(show);
+    if (show) {
+        instrumentMenu.setSelectedIndex(0);  // Reset to first item
+        // Hide waveform component when menu is shown
+        waveformComponent.setVisible(false);
+        // Ensure menu covers entire screen component
+        instrumentMenu.setBounds(getLocalBounds());
+    } else {
+        // Show waveform component when menu is hidden
+        waveformComponent.setVisible(true);
+    }
+    repaint();
+}
+
+void ScreenComponent::setInstrumentMenuSelectedIndex(int index) {
+    instrumentMenu.setSelectedIndex(index);
+}
+
+void ScreenComponent::selectInstrument() {
+    juce::String selected = instrumentMenu.getSelectedInstrument();
+    if (!selected.isEmpty()) {
+        // Trigger callback if set
+        if (instrumentMenu.onInstrumentSelected) {
+            instrumentMenu.onInstrumentSelected(selected);
+        }
+        instrumentMenu.setMenuVisible(false);
+        repaint();
+    }
+}
+
+void ScreenComponent::setInstrumentMenuCallback(std::function<void(const juce::String&)> callback) {
+    instrumentMenu.onInstrumentSelected = callback;
 }
 

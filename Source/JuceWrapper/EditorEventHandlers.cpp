@@ -48,6 +48,34 @@ bool EditorEventHandlers::handleKeyStateChanged(bool /* isKeyDown */) {
 }
 
 void EditorEventHandlers::handleButtonClicked(juce::Button* button) {
+    // Instrument select button (squareButton1)
+    if (button == &editor->squareButton1) {
+        // Toggle instrument menu
+        editor->instrumentMenuOpen = !editor->instrumentMenuOpen;
+        editor->screenComponent.showInstrumentMenu(editor->instrumentMenuOpen);
+        
+        // Hide/show parameter displays when menu is open
+        bool menuVisible = editor->instrumentMenuOpen;
+        editor->paramDisplay1.setVisible(!menuVisible);
+        editor->paramDisplay2.setVisible(!menuVisible);
+        editor->paramDisplay3.setVisible(!menuVisible);
+        editor->paramDisplay4.setVisible(!menuVisible);
+        editor->paramDisplay5.setVisible(!menuVisible);
+        editor->paramDisplay6.setVisible(!menuVisible);
+        editor->paramDisplay7.setVisible(!menuVisible);
+        editor->paramDisplay8.setVisible(!menuVisible);
+        
+        // Also hide sample name label and BPM display
+        editor->sampleNameLabel.setVisible(!menuVisible);
+        editor->bpmDisplayLabel.setVisible(!menuVisible);
+        
+        // Hide ADSR pill component
+        editor->adsrPillComponent.setVisible(!menuVisible);
+        
+        editor->repaint();
+        return;
+    }
+    
     // Time warp toggle - COMMENTED OUT
     /*
     if (button == &editor->warpToggleButton) {

@@ -9,6 +9,7 @@
 #include "MidiStatusComponent.h"
 // #include "ADSRVisualizationComponent.h"  // COMMENTED OUT - replaced with ADSRPillComponent
 #include "ADSRPillComponent.h"
+#include "PianoIconButton.h"
 #include <array>
 
 // Simple JUCE editor with gain slider
@@ -126,7 +127,7 @@ private:
     EncoderComponent encoder8;
     
     // 5 square buttons above encoders
-    juce::TextButton squareButton1;
+    PianoIconButton squareButton1;  // Instrument select button with piano icon
     juce::TextButton squareButton2;
     juce::TextButton squareButton3;
     juce::TextButton squareButton4;
@@ -196,6 +197,10 @@ private:
     bool isADSRDragging;  // True when any ADSR encoder (5-8) is being dragged
     int64_t adsrFadeOutStartTime;  // Time when fade-out started (milliseconds)
     static constexpr int64_t ADSR_FADE_OUT_DURATION_MS = 1000;  // 1 second fade-out
+    
+    // Instrument menu state
+    bool instrumentMenuOpen;  // True when instrument menu is visible
+    float lastEncoder1ValueForMenu;  // Track encoder value for menu navigation
     
     // Track if waveform has been initialized (to avoid calling updateWaveform() multiple times)
     bool waveformInitialized;

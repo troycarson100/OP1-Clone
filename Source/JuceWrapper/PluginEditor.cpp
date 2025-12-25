@@ -8,6 +8,7 @@
 #include "../Core/TimePitchError.h"
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <juce_gui_basics/juce_gui_basics.h>
+#include <juce_graphics/juce_graphics.h>
 #include <juce_core/juce_core.h>
 
 Op1CloneAudioProcessorEditor::Op1CloneAudioProcessorEditor(Op1CloneAudioProcessor& p)
@@ -98,6 +99,41 @@ Op1CloneAudioProcessorEditor::Op1CloneAudioProcessorEditor(Op1CloneAudioProcesso
     loopEnvAttack = 10.0f;
     loopEnvRelease = 100.0f;
     
+    // Initialize instrument menu state
+    instrumentMenuOpen = false;
+    lastEncoder1ValueForMenu = 0.5f;  // Start at middle
+    
+    // Setup instrument menu callback
+    screenComponent.setInstrumentMenuCallback([this](const juce::String& instrument) {
+        // Handle instrument selection
+        if (instrument == "Sampler") {
+            // Already using sampler - do nothing for now
+        } else if (instrument == "JNO") {
+            // Will implement Juno synth later
+        }
+        instrumentMenuOpen = false;
+        screenComponent.showInstrumentMenu(false);
+        
+        // Show parameter displays again when menu closes
+        paramDisplay1.setVisible(true);
+        paramDisplay2.setVisible(true);
+        paramDisplay3.setVisible(true);
+        paramDisplay4.setVisible(true);
+        paramDisplay5.setVisible(true);
+        paramDisplay6.setVisible(true);
+        paramDisplay7.setVisible(true);
+        paramDisplay8.setVisible(true);
+        
+        // Show sample name label and BPM display
+        sampleNameLabel.setVisible(true);
+        bpmDisplayLabel.setVisible(true);
+        
+        // Show ADSR pill component
+        adsrPillComponent.setVisible(true);
+        
+        repaint();
+    });
+    
     // Setup MIDI status component
     addAndMakeVisible(&midiStatusComponent);
     midiStatusComponent.setMidiHandler(&audioProcessor.getMidiInputHandler());
@@ -185,7 +221,7 @@ Op1CloneAudioProcessorEditor::Op1CloneAudioProcessorEditor(Op1CloneAudioProcesso
     addAndMakeVisible(&shiftToggleButton);
     
     // Setup 5 square buttons above encoders
-    squareButton1.setButtonText("");
+    // Button 1: Instrument select (piano icon) - styled like button 2
     squareButton1.setColour(juce::TextButton::buttonColourId, juce::Colours::darkgrey);
     squareButton1.addListener(this);
     addAndMakeVisible(&squareButton1);
