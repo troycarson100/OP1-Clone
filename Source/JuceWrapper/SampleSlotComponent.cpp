@@ -83,9 +83,20 @@ void SampleSlotComponent::drawSlot(juce::Graphics& g, int slotIndex, const juce:
     
     // Draw waveform preview if available for this slot
     if (!slotPreviewData[slotIndex].empty() && slotPreviewData[slotIndex].size() > 0) {
-        // Leave space for label at bottom (about 18px for text)
-        juce::Rectangle<int> previewBounds = bounds.reduced(4, 20);
-        if (previewBounds.getHeight() > 5 && previewBounds.getWidth() > 5) {
+        // Leave space for label at bottom (about 16px for text), and padding on sides
+        // Make waveform smaller - use more padding
+        int topPadding = 6;
+        int bottomPadding = 18;  // Space for label
+        int sidePadding = 6;
+        juce::Rectangle<int> previewBounds(
+            bounds.getX() + sidePadding,
+            bounds.getY() + topPadding,
+            bounds.getWidth() - (2 * sidePadding),
+            bounds.getHeight() - topPadding - bottomPadding
+        );
+        
+        // Always draw preview if we have data and valid bounds
+        if (previewBounds.getHeight() > 2 && previewBounds.getWidth() > 2) {
             drawWaveformPreview(g, previewBounds, slotPreviewData[slotIndex]);
         }
         
@@ -102,13 +113,13 @@ void SampleSlotComponent::drawWaveformPreview(juce::Graphics& g, const juce::Rec
         return;
     }
     
-    // Draw waveform preview in blue
-    g.setColour(juce::Colour(0xFF5BA3E8));  // Slightly lighter blue for waveform
-    
     int displayWidth = bounds.getWidth();
     int displayHeight = bounds.getHeight();
     
-    if (displayWidth < 2) return;
+    if (displayWidth < 2 || displayHeight < 2) return;
+    
+    // Draw waveform preview in white
+    g.setColour(juce::Colours::white);
     
     // Find peak value for normalization
     float maxAbs = 0.0f;
@@ -122,8 +133,8 @@ void SampleSlotComponent::drawWaveformPreview(juce::Graphics& g, const juce::Rec
     // If all values are zero or very small, don't draw
     if (maxAbs < 0.001f) return;
     
-    // Normalize factor (scale to use most of the height, centered)
-    float normalizeFactor = (displayHeight * 0.85f) / maxAbs;  // Use 85% of height
+    // Normalize factor (scale to use less of the height to make it smaller/thinner, centered)
+    float normalizeFactor = (displayHeight * 0.3f) / maxAbs;  // Use 30% of height to make it less tall
     
     float centerY = bounds.getCentreY();
     float leftX = static_cast<float>(bounds.getX());
