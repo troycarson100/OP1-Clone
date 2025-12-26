@@ -707,8 +707,29 @@ void Op1CloneAudioProcessorEditor::loadStateFromSlot(int slotIndex) {
     currentSampleName = juce::String(snapshot.sampleName);  // Load sample name
     
     // Update sample name label with slot letter (A-E)
+    // Truncate if too long to prevent overlap with ADSR pill
     char slotLetter = 'A' + slotIndex;
-    sampleNameLabel.setText(juce::String::charToString(slotLetter) + ": " + currentSampleName, juce::dontSendNotification);
+    juce::String fullText = juce::String::charToString(slotLetter) + ": " + currentSampleName;
+    
+    // Get available width for sample name (calculate from current layout)
+    auto screenBounds = screenComponent.getBounds();
+    int bpmLeftEdge = screenBounds.getX() + screenBounds.getWidth() - 100;
+    int pillWidth = 80;
+    int spacing = 5;
+    int pillX = bpmLeftEdge - pillWidth - spacing;
+    int availableWidth = (pillX - 5) - (screenBounds.getX() + 10);  // Available width for sample name
+    
+    // Truncate if needed
+    juce::Font font = sampleNameLabel.getFont();
+    if (font.getStringWidth(fullText) > availableWidth) {
+        juce::String truncated = fullText;
+        while (font.getStringWidth(truncated + "...") > availableWidth && truncated.length() > 0) {
+            truncated = truncated.substring(0, truncated.length() - 1);
+        }
+        fullText = truncated + "...";
+    }
+    
+    sampleNameLabel.setText(fullText, juce::dontSendNotification);
     
     // Update sampleRate and sampleLength for the current slot
     sampleRate = audioProcessor.getSlotSourceSampleRate(slotIndex);

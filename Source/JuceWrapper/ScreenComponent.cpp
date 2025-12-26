@@ -42,16 +42,14 @@ void ScreenComponent::resized() {
     int paramDisplayAreaHeight = 80;
     bounds.removeFromBottom(paramDisplayAreaHeight);
     
-    // Reserve space for sample slots (under waveform, left of ADSR pill)
+    // Reserve space for sample slots (under waveform)
     int sampleSlotHeight = 35;  // Less tall
     auto slotArea = bounds.removeFromBottom(sampleSlotHeight);
     waveformComponent.setBounds(bounds);
     
-    // Sample slots positioned at bottom left (before ADSR pill area)
-    // Leave space on right for ADSR pill (about 30% of width)
+    // Sample slots positioned at bottom, spread across full width of screen component
     // Move up 10px from the calculated position
-    int slotWidth = static_cast<int>(slotArea.getWidth() * 0.75f);  // Wider (75% instead of 70%)
-    sampleSlotComponent.setBounds(slotArea.getX(), slotArea.getY() - 10, slotWidth, sampleSlotHeight);
+    sampleSlotComponent.setBounds(slotArea.getX(), slotArea.getY() - 10, slotArea.getWidth(), sampleSlotHeight);
     
     // Instrument menu fills entire screen component
     instrumentMenu.setBounds(getLocalBounds());

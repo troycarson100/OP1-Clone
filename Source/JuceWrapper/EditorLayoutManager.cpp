@@ -58,11 +58,32 @@ void EditorLayoutManager::layoutComponents() {
     auto screenBounds = screenArea.removeFromTop(static_cast<int>(screenArea.getHeight() * 0.6)); // 40% reduction = 60% of original
     editor->screenComponent.setBounds(screenBounds.reduced(10));
     
-    // Sample name label (overlay on top of screen)
+    // Get screen component bounds for positioning other elements
     auto screenComponentBounds = editor->screenComponent.getBounds();
-    editor->sampleNameLabel.setBounds(screenComponentBounds.getX() + 10, 
+    
+    // ADSR pill component - positioned at top of screen, to the left of BPM display
+    // Position it at the top right, closer to the BPM label
+    int pillWidth = 80;  // Fixed width for ADSR pill
+    int pillHeight = 20;  // Small pill height
+    int topMargin = 5;  // Top margin to match BPM display
+    // BPM display is positioned at screenComponentBounds.getX() + screenComponentBounds.getWidth() - 100, width 90
+    // Position ADSR pill to the left of BPM with less spacing (moved right)
+    int bpmLeftEdge = screenComponentBounds.getX() + screenComponentBounds.getWidth() - 100;  // BPM left edge
+    int spacing = 5;  // Reduced spacing between ADSR pill and BPM (was 10)
+    int pillX = bpmLeftEdge - pillWidth - spacing;
+    int pillY = screenComponentBounds.getY() + topMargin;
+    editor->adsrPillComponent.setBounds(pillX, pillY, pillWidth, pillHeight);
+    
+    // Calculate sample name label bounds to prevent overlap with ADSR pill
+    // Sample name should end before ADSR pill starts (with some padding)
+    int sampleNameLeft = screenComponentBounds.getX() + 10;
+    int sampleNameRight = pillX - 5;  // 5px padding before ADSR pill
+    int sampleNameWidth = sampleNameRight - sampleNameLeft;
+    
+    // Sample name label (overlay on top of screen)
+    editor->sampleNameLabel.setBounds(sampleNameLeft, 
                                       screenComponentBounds.getY() + 5, 
-                                      screenComponentBounds.getWidth() - 20, 
+                                      sampleNameWidth, 
                                       20);
     
     // Parameter displays at bottom of screen module (2 rows of 4)
@@ -92,18 +113,6 @@ void EditorLayoutManager::layoutComponents() {
     editor->paramDisplay2.setBounds(paramStartX + paramDisplayWidth + paramDisplaySpacing, paramTopRowY, paramDisplayWidth, paramDisplayHeight);
     editor->paramDisplay3.setBounds(paramStartX + (paramDisplayWidth + paramDisplaySpacing) * 2, paramTopRowY, paramDisplayWidth, paramDisplayHeight);
     editor->paramDisplay4.setBounds(paramStartX + (paramDisplayWidth + paramDisplaySpacing) * 3, paramTopRowY, paramDisplayWidth, paramDisplayHeight);
-    
-    // ADSR pill component - positioned above paramDisplay4, right-aligned with BPM display
-    // Note: BPM display is positioned later, so we calculate its position manually
-    int pillWidth = static_cast<int>(paramDisplayWidth * 0.6f);  // 40% less width (60% of original)
-    int pillHeight = 20;  // Small pill height
-    int pillSpacing = 3;  // Small gap above paramDisplay4
-    // Calculate BPM display right edge (BPM is positioned at screenComponentBounds.getX() + screenComponentBounds.getWidth() - 100, width 90)
-    int bpmRightEdge = screenComponentBounds.getX() + screenComponentBounds.getWidth() - 10;  // BPM right edge (100px from right, 90px width = 10px margin)
-    // Right-align pill with BPM display
-    int pillX = bpmRightEdge - pillWidth;
-    int pillY = paramTopRowY - pillHeight - pillSpacing;
-    editor->adsrPillComponent.setBounds(pillX, pillY, pillWidth, pillHeight);
     
     // Bottom row: Attack, Decay, Sustain, Release
     editor->paramDisplay5.setBounds(paramStartX, paramBottomRowY, paramDisplayWidth, paramDisplayHeight);

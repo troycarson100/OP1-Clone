@@ -151,7 +151,28 @@ void EditorEventHandlers::handleLoadSampleButtonClicked() {
                     
                     // Update sample name label with current slot letter (A-E)
                     char slotLetter = static_cast<char>('A' + slotIndex);
-                    ed->sampleNameLabel.setText(juce::String::charToString(slotLetter) + ": " + ed->currentSampleName, juce::dontSendNotification);
+                    // Truncate sample name if too long to prevent overlap with ADSR pill
+                    juce::String fullText = juce::String::charToString(slotLetter) + ": " + ed->currentSampleName;
+                    
+                    // Get available width for sample name (calculate from current layout)
+                    auto screenBounds = ed->screenComponent.getBounds();
+                    int bpmLeftEdge = screenBounds.getX() + screenBounds.getWidth() - 100;
+                    int pillWidth = 80;
+                    int spacing = 5;
+                    int pillX = bpmLeftEdge - pillWidth - spacing;
+                    int availableWidth = (pillX - 5) - (screenBounds.getX() + 10);  // Available width for sample name
+                    
+                    // Truncate if needed
+                    juce::Font font = ed->sampleNameLabel.getFont();
+                    if (font.getStringWidth(fullText) > availableWidth) {
+                        juce::String truncated = fullText;
+                        while (font.getStringWidth(truncated + "...") > availableWidth && truncated.length() > 0) {
+                            truncated = truncated.substring(0, truncated.length() - 1);
+                        }
+                        fullText = truncated + "...";
+                    }
+                    
+                    ed->sampleNameLabel.setText(fullText, juce::dontSendNotification);
                     
                     // Save sample name to current slot
                     ed->saveCurrentStateToSlot(slotIndex);

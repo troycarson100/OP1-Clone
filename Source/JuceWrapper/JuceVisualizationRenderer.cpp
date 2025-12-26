@@ -269,6 +269,13 @@ void JuceVisualizationRenderer::drawLoopMarkers(const Core::WaveformData& data, 
                                    loopStartX, flagY + flagSize);
             }
             
+            // Draw drop shadow first (slightly offset and semi-transparent)
+            juce::Path shadowPath = flagPath;
+            float shadowOffset = 1.0f;
+            shadowPath.applyTransform(juce::AffineTransform::translation(shadowOffset, shadowOffset));
+            graphics->setColour(juce::Colour(0x40000000));  // Semi-transparent black
+            graphics->fillPath(shadowPath);
+            
             graphics->setColour(toJuceColor(data.markerColor));
             graphics->fillPath(flagPath);
             
@@ -305,6 +312,13 @@ void JuceVisualizationRenderer::drawLoopMarkers(const Core::WaveformData& data, 
                                    loopEndX, flagY,
                                    loopEndX, flagY + flagSize);
             }
+            
+            // Draw drop shadow first (slightly offset and semi-transparent)
+            juce::Path shadowPath = flagPath;
+            float shadowOffset = 1.0f;
+            shadowPath.applyTransform(juce::AffineTransform::translation(shadowOffset, shadowOffset));
+            graphics->setColour(juce::Colour(0x40000000));  // Semi-transparent black
+            graphics->fillPath(shadowPath);
             
             graphics->setColour(toJuceColor(data.markerColor));
             graphics->fillPath(flagPath);
@@ -613,6 +627,13 @@ void JuceVisualizationRenderer::drawLoopMarkersForChannel(const Core::WaveformDa
                                loopStartX, flagY + flagSize);
         }
 
+        // Draw drop shadow first (slightly offset and semi-transparent)
+        juce::Path shadowPath = flagPath;
+        float shadowOffset = 1.0f;
+        shadowPath.applyTransform(juce::AffineTransform::translation(shadowOffset, shadowOffset));
+        graphics->setColour(juce::Colour(0x40000000));  // Semi-transparent black
+        graphics->fillPath(shadowPath);
+
         graphics->setColour(toJuceColor(data.markerColor));
         graphics->fillPath(flagPath);
 
@@ -646,6 +667,13 @@ void JuceVisualizationRenderer::drawLoopMarkersForChannel(const Core::WaveformDa
                                loopEndX, flagY,
                                loopEndX, flagY + flagSize);
         }
+
+        // Draw drop shadow first (slightly offset and semi-transparent)
+        juce::Path shadowPath = flagPath;
+        float shadowOffset = 1.0f;
+        shadowPath.applyTransform(juce::AffineTransform::translation(shadowOffset, shadowOffset));
+        graphics->setColour(juce::Colour(0x40000000));  // Semi-transparent black
+        graphics->fillPath(shadowPath);
 
         graphics->setColour(toJuceColor(data.markerColor));
         graphics->fillPath(flagPath);

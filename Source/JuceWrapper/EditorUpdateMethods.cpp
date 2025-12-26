@@ -274,7 +274,49 @@ void EditorUpdateMethods::updateShiftModeDisplayValues() {
         editor->paramDisplay8.setValue(playValue);
         editor->paramDisplay8.setValueText(editor->isPolyphonic ? "Poly" : "Mono");
     } else {
-        // Normal mode: Restore ADSR parameter display values
+        // Normal mode: Restore all normal mode parameter display values
+        // Encoder 1: Repitch (-24 to +24 semitones)
+        float pitchValue = (editor->repitchSemitones + 24.0f) / 48.0f;
+        editor->encoder1.setValue(pitchValue);
+        editor->paramDisplay1.setValue(pitchValue);
+        int semitones = static_cast<int>(std::round(editor->repitchSemitones));
+        juce::String pitchText = (semitones >= 0 ? "+" : "") + juce::String(semitones);
+        editor->paramDisplay1.setValueText(pitchText);
+        
+        // Encoder 2: Start point (0 to sampleLength)
+        float startValue = 0.0f;
+        if (editor->sampleLength > 0) {
+            startValue = static_cast<float>(editor->startPoint) / static_cast<float>(editor->sampleLength);
+        }
+        editor->encoder2.setValue(startValue);
+        editor->paramDisplay2.setValue(startValue);
+        double startTimeSeconds = static_cast<double>(editor->startPoint) / (editor->sampleRate > 0.0 ? editor->sampleRate : 44100.0);
+        if (startTimeSeconds >= 1.0) {
+            editor->paramDisplay2.setValueText(juce::String(startTimeSeconds, 2) + "s");
+        } else {
+            editor->paramDisplay2.setValueText(juce::String(static_cast<int>(startTimeSeconds * 1000.0)) + "ms");
+        }
+        
+        // Encoder 3: End point (0 to sampleLength)
+        float endValue = 0.0f;
+        if (editor->sampleLength > 0) {
+            endValue = static_cast<float>(editor->endPoint) / static_cast<float>(editor->sampleLength);
+        }
+        editor->encoder3.setValue(endValue);
+        editor->paramDisplay3.setValue(endValue);
+        double endTimeSeconds = static_cast<double>(editor->endPoint) / (editor->sampleRate > 0.0 ? editor->sampleRate : 44100.0);
+        if (endTimeSeconds >= 1.0) {
+            editor->paramDisplay3.setValueText(juce::String(endTimeSeconds, 2) + "s");
+        } else {
+            editor->paramDisplay3.setValueText(juce::String(static_cast<int>(endTimeSeconds * 1000.0)) + "ms");
+        }
+        
+        // Encoder 4: Sample gain (0.0 to 2.0)
+        float gainValue = editor->sampleGain / 2.0f;
+        editor->encoder4.setValue(gainValue);
+        editor->paramDisplay4.setValue(gainValue);
+        editor->paramDisplay4.setValueText(juce::String(editor->sampleGain, 2) + "x");
+        
         // Encoder 5: Attack (0-10000ms)
         float attackValue = editor->adsrAttackMs / 10000.0f;
         editor->encoder5.setValue(attackValue);
