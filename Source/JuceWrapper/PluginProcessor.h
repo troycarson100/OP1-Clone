@@ -64,6 +64,10 @@ public:
     void setSlotSampleGain(int slotIndex, float gain);
     void setSlotADSR(int slotIndex, float attackMs, float decayMs, float sustain, float releaseMs);
     
+    // Set loop parameters for a specific slot (0-4 for A-E)
+    void setSlotLoopEnabled(int slotIndex, bool enabled);
+    void setSlotLoopPoints(int slotIndex, int startPoint, int endPoint);
+    
     // Get parameters for a specific slot (0-4 for A-E)
     float getSlotRepitch(int slotIndex) const;
     int getSlotStartPoint(int slotIndex) const;
@@ -80,6 +84,12 @@ public:
     
     // Get source sample rate for a specific slot (for time calculations)
     double getSlotSourceSampleRate(int slotIndex) const;
+    
+    // Get active slots (slots that are currently playing)
+    std::array<bool, 5> getActiveSlots() const;
+    
+    // Get active voice count (for UI updates)
+    int getActiveVoiceCount() const;
     
     // Set LP filter parameters
     void setLPFilterCutoff(float cutoffHz);

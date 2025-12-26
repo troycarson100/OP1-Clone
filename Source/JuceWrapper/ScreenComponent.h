@@ -46,6 +46,9 @@ public:
     void setSelectedSlot(int slotIndex);  // 0-4 for A-E
     int getSelectedSlot() const { return selectedSlot; }
     
+    // Set active slots (slots that are currently playing)
+    void setActiveSlots(const std::array<bool, 5>& activeSlots);
+    
     // Instrument menu control
     void showInstrumentMenu(bool show);
     bool isInstrumentMenuVisible() const { return instrumentMenu.isVisible(); }  // Uses Component::isVisible()

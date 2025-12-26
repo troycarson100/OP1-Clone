@@ -70,8 +70,9 @@ void JuceVisualizationRenderer::renderWaveform(const Core::WaveformData& data, c
         // graphics->drawHorizontalLine(topCenterY, static_cast<float>(bounds.x), static_cast<float>(bounds.getRight()));
         // graphics->drawHorizontalLine(bottomCenterY, static_cast<float>(bounds.x), static_cast<float>(bounds.getRight()));
         
-        // Draw loop markers if enabled (on both channels)
-        if (data.loopEnabled) {
+        // Draw loop markers if loop start/end points are set (on both channels)
+        // This allows users to see where the loop points are set before enabling loop
+        if (data.loopStartPoint > 0 || data.loopEndPoint > 0) {
             drawLoopMarkersForChannel(data, topBounds);
             drawLoopMarkersForChannel(data, bottomBounds);
         }
@@ -101,8 +102,9 @@ void JuceVisualizationRenderer::renderWaveform(const Core::WaveformData& data, c
         // Draw waveform
         drawWaveformPath(data, bounds);
 
-        // Draw loop markers if enabled
-        if (data.loopEnabled && !sampleData->empty()) {
+        // Draw loop markers if loop start/end points are set (even if loopEnabled is false)
+        // This allows users to see where the loop points are set before enabling loop
+        if ((data.loopStartPoint > 0 || data.loopEndPoint > 0) && !sampleData->empty()) {
             drawLoopMarkers(data, bounds);
         }
     }

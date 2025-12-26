@@ -336,6 +336,14 @@ double Op1CloneAudioProcessor::getSlotSourceSampleRate(int slotIndex) const {
     return adapter.getSlotSourceSampleRate(slotIndex);
 }
 
+std::array<bool, 5> Op1CloneAudioProcessor::getActiveSlots() const {
+    return adapter.getActiveSlots();
+}
+
+int Op1CloneAudioProcessor::getActiveVoiceCount() const {
+    return adapter.getActiveVoiceCount();
+}
+
 void Op1CloneAudioProcessor::setLPFilterCutoff(float cutoffHz) {
     adapter.setLPFilterCutoff(cutoffHz);
 }
@@ -384,6 +392,14 @@ void Op1CloneAudioProcessor::setSlotSampleGain(int slotIndex, float gain) {
 
 void Op1CloneAudioProcessor::setSlotADSR(int slotIndex, float attackMs, float decayMs, float sustain, float releaseMs) {
     adapter.setSlotADSR(slotIndex, attackMs, decayMs, sustain, releaseMs);
+}
+
+void Op1CloneAudioProcessor::setSlotLoopEnabled(int slotIndex, bool enabled) {
+    adapter.setSlotLoopEnabled(slotIndex, enabled);
+}
+
+void Op1CloneAudioProcessor::setSlotLoopPoints(int slotIndex, int startPoint, int endPoint) {
+    adapter.setSlotLoopPoints(slotIndex, startPoint, endPoint);
 }
 
 float Op1CloneAudioProcessor::getSlotRepitch(int slotIndex) const {

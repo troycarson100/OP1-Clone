@@ -5,6 +5,7 @@ SampleSlotComponent::SampleSlotComponent()
     : selectedSlotIndex(0)  // Start with slot A selected
 {
     setOpaque(false);
+    activeSlots.fill(false);  // Initialize all slots as inactive
 }
 
 SampleSlotComponent::~SampleSlotComponent()
@@ -32,6 +33,12 @@ void SampleSlotComponent::setSelectedSlot(int slotIndex)
         selectedSlotIndex = slotIndex;
         repaint();
     }
+}
+
+void SampleSlotComponent::setActiveSlots(const std::array<bool, 5>& activeSlots)
+{
+    this->activeSlots = activeSlots;
+    repaint();
 }
 
 void SampleSlotComponent::paint(juce::Graphics& g)
@@ -101,7 +108,12 @@ void SampleSlotComponent::drawSlot(juce::Graphics& g, int slotIndex, const juce:
         }
         
         // Draw blue indicator bar at top of slot if it has a sample
-        g.setColour(juce::Colour(0xFF4A90E2));  // Bright blue
+        // Use brighter blue if slot is active/playing
+        if (activeSlots[slotIndex]) {
+            g.setColour(juce::Colour(0xFF7BB3FF));  // Brighter/light blue when active
+        } else {
+            g.setColour(juce::Colour(0xFF4A90E2));  // Normal bright blue
+        }
         int barHeight = 2;
         g.fillRect(bounds.getX(), bounds.getY(), bounds.getWidth(), barHeight);
     }

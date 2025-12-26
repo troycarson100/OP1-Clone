@@ -129,13 +129,15 @@ bool SamplerEngine::triggerNoteOnWithSample(int note, float velocity, SampleData
 
 bool SamplerEngine::triggerNoteOnWithSample(int note, float velocity, SampleDataPtr sampleData,
                                             float repitchSemitones, int startPoint, int endPoint, float sampleGain,
-                                            float attackMs, float decayMs, float sustain, float releaseMs) {
+                                            float attackMs, float decayMs, float sustain, float releaseMs,
+                                            bool loopEnabled, int loopStartPoint, int loopEndPoint) {
     // Trigger note on with slot-specific parameters (applied to the allocated voice, not globally)
     if (sampleData && sampleData->length > 0) {
         bool wasStolen = false;
         bool started = voiceManager.noteOn(note, velocity, sampleData, wasStolen, 0,
                                            repitchSemitones, startPoint, endPoint, sampleGain,
-                                           attackMs, decayMs, sustain, releaseMs);
+                                           attackMs, decayMs, sustain, releaseMs,
+                                           loopEnabled, loopStartPoint, loopEndPoint);
         if (started) {
             voicesStartedThisBlock.store(voicesStartedThisBlock.load(std::memory_order_relaxed) + 1, std::memory_order_release);
             if (wasStolen) {

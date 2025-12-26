@@ -23,32 +23,48 @@ void EditorUpdateMethods::updateWaveform(int slotIndex) {
     
     // Safety check: if no sample data, just clear the screen and return early
     if (leftChannel.empty()) {
-        editor->screenComponent.setSampleData(leftChannel);
+        // Don't clear the waveform if we're just updating parameters for a slot that has no sample
+        // Only clear if this is a different slot than current
+        if (slotIndex == editor->currentSlotIndex) {
+            editor->screenComponent.setSampleData(leftChannel);
+        }
         // Clear preview for this slot if no sample
         editor->screenComponent.setSlotPreview(slotIndex, std::vector<float>());
         return;
     }
     
     // Use stereo data if right channel is available, otherwise use mono
+    // Always update the waveform data, even if it's the same slot
+    // This ensures the waveform is visible after loading or switching slots
     if (!rightChannel.empty()) {
         editor->screenComponent.setStereoSampleData(leftChannel, rightChannel);
     } else {
         editor->screenComponent.setSampleData(leftChannel);
     }
     
+    // CRITICAL: Ensure endPoint is set to sample length so waveform is visible
+    // If endPoint is 0, the waveform won't render (visibleLength will be 0)
+    if (!leftChannel.empty() && editor->endPoint == 0) {
+        editor->endPoint = static_cast<int>(leftChannel.size());
+        editor->screenComponent.setEndPoint(editor->endPoint);
+    }
+    
+    // Force immediate repaint to ensure waveform is displayed
+    editor->screenComponent.repaint();
+    
     // Update sample slot preview for the specified slot with left channel data
-        if (!leftChannel.empty()) {
-            // For preview, we can use more samples for better detail
-            // Use a reasonable downsample factor to get enough points for a good preview
-            std::vector<float> previewData;
-            int targetPoints = 400;  // More points for better waveform detail
-            int downsampleFactor = static_cast<int>(leftChannel.size() / targetPoints);
-            if (downsampleFactor < 1) downsampleFactor = 1;
-            for (size_t i = 0; i < leftChannel.size(); i += downsampleFactor) {
-                previewData.push_back(leftChannel[i]);
-            }
-            // Update preview for the specified slot (not just slot A)
-            editor->screenComponent.setSlotPreview(slotIndex, previewData);
+    if (!leftChannel.empty()) {
+        // For preview, we can use more samples for better detail
+        // Use a reasonable downsample factor to get enough points for a good preview
+        std::vector<float> previewData;
+        int targetPoints = 400;  // More points for better waveform detail
+        int downsampleFactor = static_cast<int>(leftChannel.size() / targetPoints);
+        if (downsampleFactor < 1) downsampleFactor = 1;
+        for (size_t i = 0; i < leftChannel.size(); i += downsampleFactor) {
+            previewData.push_back(leftChannel[i]);
+        }
+        // Update preview for the specified slot (not just slot A)
+        editor->screenComponent.setSlotPreview(slotIndex, previewData);
     }
 }
 
@@ -141,6 +157,10 @@ void EditorUpdateMethods::updateSampleEditing() {
 }
 
 void EditorUpdateMethods::updateWaveformVisualization() {
+    // Always update the waveform data to ensure it's current for the selected slot
+    // This handles both slot switching and parameter updates
+    updateWaveform(editor->currentSlotIndex);
+    
     // Update waveform component with current start/end points and gain
     editor->screenComponent.setStartPoint(editor->startPoint);
     editor->screenComponent.setEndPoint(editor->endPoint);
@@ -151,6 +171,7 @@ void EditorUpdateMethods::updateWaveformVisualization() {
     editor->screenComponent.setLoopEnabled(editor->loopEnabled);
     // Force repaint to show the zoomed waveform
     editor->screenComponent.repaint();
+    editor->repaint();  // Also repaint the editor to ensure everything is updated
 }
 
 void EditorUpdateMethods::updateBPMDisplay() {
@@ -252,6 +273,46 @@ void EditorUpdateMethods::updateShiftModeDisplayValues() {
         editor->encoder8.setValue(playValue);
         editor->paramDisplay8.setValue(playValue);
         editor->paramDisplay8.setValueText(editor->isPolyphonic ? "Poly" : "Mono");
+    } else {
+        // Normal mode: Restore ADSR parameter display values
+        // Encoder 5: Attack (0-10000ms)
+        float attackValue = editor->adsrAttackMs / 10000.0f;
+        editor->encoder5.setValue(attackValue);
+        editor->paramDisplay5.setValue(attackValue);
+        if (editor->adsrAttackMs >= 1000.0f) {
+            editor->paramDisplay5.setValueText(juce::String(editor->adsrAttackMs / 1000.0f, 2) + "s");
+        } else {
+            editor->paramDisplay5.setValueText(juce::String(static_cast<int>(editor->adsrAttackMs)) + "ms");
+        }
+        
+        // Encoder 6: Decay (0-20000ms)
+        float decayValue = editor->adsrDecayMs / 20000.0f;
+        editor->encoder6.setValue(decayValue);
+        editor->paramDisplay6.setValue(decayValue);
+        if (editor->adsrDecayMs >= 1000.0f) {
+            editor->paramDisplay6.setValueText(juce::String(editor->adsrDecayMs / 1000.0f, 2) + "s");
+        } else {
+            editor->paramDisplay6.setValueText(juce::String(static_cast<int>(editor->adsrDecayMs)) + "ms");
+        }
+        
+        // Encoder 7: Sustain (0.0-1.0)
+        editor->encoder7.setValue(editor->adsrSustain);
+        editor->paramDisplay7.setValue(editor->adsrSustain);
+        int sustainPercent = static_cast<int>(editor->adsrSustain * 100.0f);
+        editor->paramDisplay7.setValueText(juce::String(sustainPercent) + "%");
+        
+        // Encoder 8: Release (0-20000ms)
+        float releaseValue = editor->adsrReleaseMs / 20000.0f;
+        editor->encoder8.setValue(releaseValue);
+        editor->paramDisplay8.setValue(releaseValue);
+        if (editor->adsrReleaseMs >= 1000.0f) {
+            editor->paramDisplay8.setValueText(juce::String(editor->adsrReleaseMs / 1000.0f, 2) + "s");
+        } else {
+            editor->paramDisplay8.setValueText(juce::String(static_cast<int>(editor->adsrReleaseMs)) + "ms");
+        }
+        
+        // Update ADSR visualization
+        editor->updateADSR();
     }
 }
 

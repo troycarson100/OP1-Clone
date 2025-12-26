@@ -65,6 +65,10 @@ void ScreenComponent::setSelectedSlot(int slotIndex) {
     }
 }
 
+void ScreenComponent::setActiveSlots(const std::array<bool, 5>& activeSlots) {
+    sampleSlotComponent.setActiveSlots(activeSlots);
+}
+
 void ScreenComponent::setSampleData(const std::vector<float>& data) {
     waveformComponent.setSampleData(data);
 }

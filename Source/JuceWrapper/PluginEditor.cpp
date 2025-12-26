@@ -125,6 +125,8 @@ Op1CloneAudioProcessorEditor::Op1CloneAudioProcessorEditor(Op1CloneAudioProcesso
         audioProcessor.setSlotEndPoint(i, snapshot.endPoint);
         audioProcessor.setSlotSampleGain(i, snapshot.sampleGain);
         audioProcessor.setSlotADSR(i, snapshot.attackMs, snapshot.decayMs, snapshot.sustain, snapshot.releaseMs);
+        audioProcessor.setSlotLoopEnabled(i, snapshot.loopEnabled);
+        audioProcessor.setSlotLoopPoints(i, snapshot.loopStartPoint, snapshot.loopEndPoint);
     }
     
     // Setup menu encoder (on left side of screen component)
@@ -430,9 +432,14 @@ void Op1CloneAudioProcessorEditor::resized() {
     // Initialize waveform on first resize (after window is shown)
     if (!waveformInitialized) {
         waveformInitialized = true;
-        updateWaveform();
-        // Update all slot previews to show waveforms for any loaded samples
-        updateAllSlotPreviews();
+        // Try to load the waveform - if sample isn't loaded yet, it will be retried in timerCallback
+        // Use a delayed call to ensure sample data is loaded
+        juce::MessageManager::callAsync([this]() {
+            updateWaveform(currentSlotIndex);
+            updateWaveformVisualization();
+            updateAllSlotPreviews();
+            repaint();
+        });
     }
     
     // OLD final safety check (COMMENTED OUT - replaced with pill component)
@@ -675,6 +682,8 @@ void Op1CloneAudioProcessorEditor::loadStateFromSlot(int slotIndex) {
     audioProcessor.setSlotEndPoint(currentSlotIndex, endPoint);
     audioProcessor.setSlotSampleGain(currentSlotIndex, sampleGain);
     audioProcessor.setSlotADSR(currentSlotIndex, adsrAttackMs, adsrDecayMs, adsrSustain, adsrReleaseMs);
+    audioProcessor.setSlotLoopEnabled(currentSlotIndex, loopEnabled);
+    audioProcessor.setSlotLoopPoints(currentSlotIndex, loopStartPoint, loopEndPoint);
     
     // Load new slot
     currentSlotIndex = slotIndex;
@@ -701,21 +710,33 @@ void Op1CloneAudioProcessorEditor::loadStateFromSlot(int slotIndex) {
     char slotLetter = 'A' + slotIndex;
     sampleNameLabel.setText(juce::String::charToString(slotLetter) + ": " + currentSampleName, juce::dontSendNotification);
     
+    // Update sampleRate and sampleLength for the current slot
+    sampleRate = audioProcessor.getSlotSourceSampleRate(slotIndex);
+    std::vector<float> leftChannel, rightChannel;
+    audioProcessor.getSlotStereoSampleDataForVisualization(slotIndex, leftChannel, rightChannel);
+    if (!leftChannel.empty()) {
+        sampleLength = static_cast<int>(leftChannel.size());
+    } else {
+        sampleLength = 0;
+    }
+    
     // Sync adapter's per-slot parameters with loaded snapshot (ensure adapter has this slot's parameters)
     audioProcessor.setSlotRepitch(slotIndex, repitchSemitones);
     audioProcessor.setSlotStartPoint(slotIndex, startPoint);
     audioProcessor.setSlotEndPoint(slotIndex, endPoint);
     audioProcessor.setSlotSampleGain(slotIndex, sampleGain);
     audioProcessor.setSlotADSR(slotIndex, adsrAttackMs, adsrDecayMs, adsrSustain, adsrReleaseMs);
+    audioProcessor.setSlotLoopEnabled(slotIndex, loopEnabled);
+    audioProcessor.setSlotLoopPoints(slotIndex, loopStartPoint, loopEndPoint);
     
     // Apply values to processor and UI
     updateSampleEditing();
     updateADSR();
     updateShiftModeDisplayValues();
-    updateWaveformVisualization();
     
-    // Update waveform for the loaded slot
+    // Update waveform for the loaded slot (this also updates the visualization)
     updateWaveform(slotIndex);
+    updateWaveformVisualization();
     
     // Update all slot previews to ensure all slots show their waveforms correctly
     updateAllSlotPreviews();

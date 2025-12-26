@@ -5,6 +5,7 @@
 #include "../Core/MidiEvent.h"
 #include <vector>
 #include <array>
+#include <atomic>
 
 // Thin adapter layer between JUCE and portable Core engine
 // Converts JUCE types to Core types
@@ -61,8 +62,14 @@ public:
     // Get source sample rate for a specific slot (for time calculations)
     double getSlotSourceSampleRate(int slotIndex) const;
     
+    // Get active slots (slots that are currently playing) - thread-safe
+    std::array<bool, 5> getActiveSlots() const;
+    
     // Get debug info (called from audio thread, safe to read from UI thread)
     void getDebugInfo(int& actualInN, int& outN, int& primeRemaining, int& nonZeroCount) const;
+    
+    // Get active voice count (for UI updates)
+    int getActiveVoiceCount() const;
     
     // Get playhead position (for UI display)
     double getPlayheadPosition() const;
@@ -115,6 +122,10 @@ public:
     void setSlotSampleGain(int slotIndex, float gain);
     void setSlotADSR(int slotIndex, float attackMs, float decayMs, float sustain, float releaseMs);
     
+    // Set loop parameters for a specific slot (0-4 for A-E)
+    void setSlotLoopEnabled(int slotIndex, bool enabled);
+    void setSlotLoopPoints(int slotIndex, int startPoint, int endPoint);
+    
     // Get parameters for a specific slot (0-4 for A-E)
     float getSlotRepitch(int slotIndex) const;
     int getSlotStartPoint(int slotIndex) const;
@@ -149,6 +160,9 @@ private:
         float decayMs;
         float sustain;
         float releaseMs;
+        bool loopEnabled;
+        int loopStartPoint;
+        int loopEndPoint;
         
         SlotParameters()
             : repitchSemitones(0.0f)
@@ -159,9 +173,15 @@ private:
             , decayMs(0.0f)
             , sustain(1.0f)
             , releaseMs(1000.0f)
+            , loopEnabled(false)
+            , loopStartPoint(0)
+            , loopEndPoint(0)
         {}
     };
     std::array<SlotParameters, 5> slotParameters;  // 5 slots A-E
+    
+    // Track which slots are currently active (playing) - updated in processBlock
+    mutable std::array<std::atomic<bool>, 5> activeSlots;  // Thread-safe tracking of active slots
     
     // Legacy sample data storage (for backward compatibility)
     std::vector<float> sampleData;        // Left channel (or mono)

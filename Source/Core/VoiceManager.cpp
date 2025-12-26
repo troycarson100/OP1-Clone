@@ -153,7 +153,8 @@ bool VoiceManager::noteOn(int note, float velocity, SampleDataPtr sampleData, bo
 
 bool VoiceManager::noteOn(int note, float velocity, SampleDataPtr sampleData, bool& wasStolen, int startDelayOffset,
                           float repitchSemitones, int startPoint, int endPoint, float sampleGain,
-                          float attackMs, float decayMs, float sustain, float releaseMs) {
+                          float attackMs, float decayMs, float sustain, float releaseMs,
+                          bool loopEnabled, int loopStartPoint, int loopEndPoint) {
     // In mono mode, turn off all currently playing voices
     if (!isPolyphonicMode) {
         for (auto& voice : voices) {
@@ -179,6 +180,8 @@ bool VoiceManager::noteOn(int note, float velocity, SampleDataPtr sampleData, bo
             voices[i].setDecayTime(decayMs);
             voices[i].setSustainLevel(sustain);
             voices[i].setReleaseTime(releaseMs);
+            voices[i].setLoopEnabled(loopEnabled);
+            voices[i].setLoopPoints(loopStartPoint, loopEndPoint);
             voices[i].setSampleData(sampleData);
             voices[i].noteOn(note, velocity, startDelayOffset);
             wasStolen = false; // Not stolen, just retriggered

@@ -204,6 +204,8 @@ void EncoderSetupManager::setupEncoder4() {
             // Update current slot's parameter in adapter (this only affects new notes, not existing voices)
             ed->audioProcessor.setSlotSampleGain(ed->currentSlotIndex, ed->sampleGain);
             ed->updateWaveformVisualization();
+            // Refresh slot previews to ensure waveform is still visible after gain changes
+            ed->updateAllSlotPreviews();
             // Update parameter display 4 (Gain) - normalize from 0-2.0 to 0-1
             ed->paramDisplay4.setValue(value);
             // Format value: show as multiplier (e.g., "1.5x")
@@ -232,16 +234,26 @@ void EncoderSetupManager::setupEncoder5() {
         if (ed->shiftToggleButton.getToggleState()) {
             // Shift mode: Encoder 5 = Loop Start Point (0 to sampleLength)
             // Allow loop start to be past loop end for reverse playback
+            // Update sampleLength from current slot
+            std::vector<float> leftChannel, rightChannel;
+            ed->audioProcessor.getSlotStereoSampleDataForVisualization(ed->currentSlotIndex, leftChannel, rightChannel);
+            if (!leftChannel.empty()) {
+                ed->sampleLength = static_cast<int>(leftChannel.size());
+            }
             if (ed->sampleLength > 0) {
                 ed->loopStartPoint = static_cast<int>(value * static_cast<float>(ed->sampleLength));
                 // No constraint - allow loop start to be past loop end for reverse playback
-                // Send to processor
-                ed->audioProcessor.setLoopPoints(ed->loopStartPoint, ed->loopEndPoint);
+                // Send to processor for current slot
+                ed->audioProcessor.setSlotLoopPoints(ed->currentSlotIndex, ed->loopStartPoint, ed->loopEndPoint);
+                // Save state to current slot
+                ed->saveCurrentStateToSlot(ed->currentSlotIndex);
                 // Update waveform visualization to show loop markers
                 ed->updateWaveformVisualization();
                 // Update parameter display
                 ed->paramDisplay5.setValue(value);
-                double loopStartTimeSeconds = static_cast<double>(ed->loopStartPoint) / ed->sampleRate;
+                // Update sampleRate from current slot
+                ed->sampleRate = ed->audioProcessor.getSlotSourceSampleRate(ed->currentSlotIndex);
+                double loopStartTimeSeconds = static_cast<double>(ed->loopStartPoint) / (ed->sampleRate > 0.0 ? ed->sampleRate : 44100.0);
                 if (loopStartTimeSeconds >= 1.0) {
                     ed->paramDisplay5.setValueText(juce::String(loopStartTimeSeconds, 2) + "s");
                 } else {
@@ -345,16 +357,26 @@ void EncoderSetupManager::setupEncoder6() {
         if (ed->shiftToggleButton.getToggleState()) {
             // Shift mode: Encoder 6 = Loop End Point (0 to sampleLength)
             // Allow loop end to be before loop start for reverse playback
+            // Update sampleLength from current slot
+            std::vector<float> leftChannel, rightChannel;
+            ed->audioProcessor.getSlotStereoSampleDataForVisualization(ed->currentSlotIndex, leftChannel, rightChannel);
+            if (!leftChannel.empty()) {
+                ed->sampleLength = static_cast<int>(leftChannel.size());
+            }
             if (ed->sampleLength > 0) {
                 ed->loopEndPoint = static_cast<int>(value * static_cast<float>(ed->sampleLength));
                 // No constraint - allow loop end to be before loop start for reverse playback
-                // Send to processor
-                ed->audioProcessor.setLoopPoints(ed->loopStartPoint, ed->loopEndPoint);
+                // Send to processor for current slot
+                ed->audioProcessor.setSlotLoopPoints(ed->currentSlotIndex, ed->loopStartPoint, ed->loopEndPoint);
+                // Save state to current slot
+                ed->saveCurrentStateToSlot(ed->currentSlotIndex);
                 // Update waveform visualization to show loop markers
                 ed->updateWaveformVisualization();
                 // Update parameter display
                 ed->paramDisplay6.setValue(value);
-                double loopEndTimeSeconds = static_cast<double>(ed->loopEndPoint) / ed->sampleRate;
+                // Update sampleRate from current slot
+                ed->sampleRate = ed->audioProcessor.getSlotSourceSampleRate(ed->currentSlotIndex);
+                double loopEndTimeSeconds = static_cast<double>(ed->loopEndPoint) / (ed->sampleRate > 0.0 ? ed->sampleRate : 44100.0);
                 if (loopEndTimeSeconds >= 1.0) {
                     ed->paramDisplay6.setValueText(juce::String(loopEndTimeSeconds, 2) + "s");
                 } else {
@@ -458,8 +480,11 @@ void EncoderSetupManager::setupEncoder7() {
         if (ed->shiftToggleButton.getToggleState()) {
             // Shift mode: Encoder 7 = Loop (on/off)
             ed->loopEnabled = value >= 0.5f;
-            ed->audioProcessor.setLoopEnabled(ed->loopEnabled);
-            ed->audioProcessor.setLoopPoints(ed->loopStartPoint, ed->loopEndPoint);
+            // Send to processor for current slot
+            ed->audioProcessor.setSlotLoopEnabled(ed->currentSlotIndex, ed->loopEnabled);
+            ed->audioProcessor.setSlotLoopPoints(ed->currentSlotIndex, ed->loopStartPoint, ed->loopEndPoint);
+            // Save state to current slot
+            ed->saveCurrentStateToSlot(ed->currentSlotIndex);
             // Update parameter display
             ed->paramDisplay7.setValue(value);
             ed->paramDisplay7.setValueText(ed->loopEnabled ? "ON" : "OFF");

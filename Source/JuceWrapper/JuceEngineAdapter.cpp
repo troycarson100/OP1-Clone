@@ -9,6 +9,10 @@ JuceEngineAdapter::JuceEngineAdapter()
     , playbackMode(0)  // Default to Stacked
     , roundRobinIndex(0)
 {
+    // Initialize all slots as inactive
+    for (int i = 0; i < 5; ++i) {
+        activeSlots[i].store(false, std::memory_order_relaxed);
+    }
 }
 
 JuceEngineAdapter::~JuceEngineAdapter() {
@@ -214,6 +218,19 @@ void JuceEngineAdapter::setSlotADSR(int slotIndex, float attackMs, float decayMs
     }
 }
 
+void JuceEngineAdapter::setSlotLoopEnabled(int slotIndex, bool enabled) {
+    if (slotIndex >= 0 && slotIndex < 5) {
+        slotParameters[slotIndex].loopEnabled = enabled;
+    }
+}
+
+void JuceEngineAdapter::setSlotLoopPoints(int slotIndex, int startPoint, int endPoint) {
+    if (slotIndex >= 0 && slotIndex < 5) {
+        slotParameters[slotIndex].loopStartPoint = startPoint;
+        slotParameters[slotIndex].loopEndPoint = endPoint;
+    }
+}
+
 float JuceEngineAdapter::getSlotRepitch(int slotIndex) const {
     if (slotIndex >= 0 && slotIndex < 5) {
         return slotParameters[slotIndex].repitchSemitones;
@@ -260,18 +277,18 @@ void JuceEngineAdapter::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
     // Convert MIDI messages and handle stacked/round robin playback
     convertMidiBuffer(midiMessages, numSamples);
     
-    // Process MIDI events with stacked/round robin support
-    // For stacked mode: trigger all loaded slots
-    // For round robin: cycle through loaded slots
-    std::vector<Core::MidiEvent> processedEvents;
-    
-    // Get list of loaded slots
-    std::vector<int> loadedSlots;
-    for (int i = 0; i < 5; ++i) {
-        if (slotSamples[i].hasSample && !slotSamples[i].leftChannel.empty()) {
-            loadedSlots.push_back(i);
+        // Process MIDI events with stacked/round robin support
+        // For stacked mode: trigger all loaded slots
+        // For round robin: cycle through loaded slots
+        std::vector<Core::MidiEvent> processedEvents;
+        
+        // Get list of loaded slots
+        std::vector<int> loadedSlots;
+        for (int i = 0; i < 5; ++i) {
+            if (slotSamples[i].hasSample && !slotSamples[i].leftChannel.empty()) {
+                loadedSlots.push_back(i);
+            }
         }
-    }
     
     // If no slots loaded, fall back to default sample
     if (loadedSlots.empty()) {
@@ -298,6 +315,9 @@ void JuceEngineAdapter::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
                     slotSampleData->length = static_cast<int>(slotSamples[slotIndex].leftChannel.size());
                     slotSampleData->sourceSampleRate = slotSamples[slotIndex].sourceSampleRate;
                     
+                    // Mark this slot as active
+                    activeSlots[slotIndex].store(true, std::memory_order_relaxed);
+                    
                     // Trigger note on with this slot's sample data and parameters
                     // Parameters are applied directly to the allocated voice, not globally
                     // This allows each slot to have independent parameters
@@ -305,10 +325,17 @@ void JuceEngineAdapter::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
                     int uniqueNote = (baseNote + slotOffset) % 128;  // Wrap to valid MIDI range
                     engine.triggerNoteOnWithSample(uniqueNote, event.velocity, slotSampleData,
                                                    params.repitchSemitones, params.startPoint, params.endPoint, params.sampleGain,
-                                                   params.attackMs, params.decayMs, params.sustain, params.releaseMs);
+                                                   params.attackMs, params.decayMs, params.sustain, params.releaseMs,
+                                                   params.loopEnabled, params.loopStartPoint, params.loopEndPoint);
                     slotOffset++;
                 }
             } else if (event.type == Core::MidiEvent::NoteOff) {
+                // NoteOff: clear active slots for all loaded slots that were playing this note
+                // In stacked mode, all slots play together, so clear all when note is released
+                for (int slotIndex : loadedSlots) {
+                    activeSlots[slotIndex].store(false, std::memory_order_relaxed);
+                }
+                
                 // NoteOff: send to all voices that might be playing this note (from any slot)
                 // Since we used different note numbers for each slot, we need to send NoteOff for all of them
                 int baseNote = event.note;
@@ -345,12 +372,24 @@ void JuceEngineAdapter::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
                 slotSampleData->length = static_cast<int>(slotSamples[slotIndex].leftChannel.size());
                 slotSampleData->sourceSampleRate = slotSamples[slotIndex].sourceSampleRate;
                 
+                // Mark this slot as active
+                activeSlots[slotIndex].store(true, std::memory_order_relaxed);
+                
                 // Trigger note with this slot's sample data and parameters
                 engine.triggerNoteOnWithSample(event.note, event.velocity, slotSampleData,
                                                params.repitchSemitones, params.startPoint, params.endPoint, params.sampleGain,
-                                               params.attackMs, params.decayMs, params.sustain, params.releaseMs);
+                                               params.attackMs, params.decayMs, params.sustain, params.releaseMs,
+                                               params.loopEnabled, params.loopStartPoint, params.loopEndPoint);
+            } else if (event.type == Core::MidiEvent::NoteOff) {
+                // NoteOff: clear active slot for the slot that was playing
+                // In round robin mode, only one slot plays at a time
+                int slotIndex = loadedSlots[(roundRobinIndex - 1 + loadedSlots.size()) % loadedSlots.size()];
+                activeSlots[slotIndex].store(false, std::memory_order_relaxed);
+                
+                // NoteOff events pass through unchanged
+                processedEvents.push_back(event);
             } else {
-                // NoteOff or other events pass through unchanged
+                // Other events pass through unchanged
                 processedEvents.push_back(event);
             }
         }
@@ -443,6 +482,18 @@ double JuceEngineAdapter::getSlotSourceSampleRate(int slotIndex) const {
         return slotSamples[slotIndex].sourceSampleRate;
     }
     return 44100.0;  // Default fallback
+}
+
+std::array<bool, 5> JuceEngineAdapter::getActiveSlots() const {
+    std::array<bool, 5> result;
+    for (int i = 0; i < 5; ++i) {
+        result[i] = activeSlots[i].load(std::memory_order_relaxed);
+    }
+    return result;
+}
+
+int JuceEngineAdapter::getActiveVoiceCount() const {
+    return engine.getActiveVoicesCount();
 }
 
 void JuceEngineAdapter::getDebugInfo(int& actualInN, int& outN, int& primeRemaining, int& nonZeroCount) const {

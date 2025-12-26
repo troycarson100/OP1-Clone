@@ -22,11 +22,15 @@ public:
     
     // Set selected slot (0-4 for A-E)
     void setSelectedSlot(int slotIndex);
+    
+    // Set active slots (slots that are currently playing)
+    void setActiveSlots(const std::array<bool, 5>& activeSlots);
 
 private:
     std::array<std::vector<float>, 5> slotPreviewData;  // Preview data for each slot
     static constexpr int NUM_SLOTS = 5;
     int selectedSlotIndex;  // Currently selected slot (0-4)
+    std::array<bool, 5> activeSlots;  // Track which slots are currently active/playing
     
     void drawSlot(juce::Graphics& g, int slotIndex, const juce::Rectangle<int>& bounds);
     void drawWaveformPreview(juce::Graphics& g, const juce::Rectangle<int>& bounds, const std::vector<float>& data);

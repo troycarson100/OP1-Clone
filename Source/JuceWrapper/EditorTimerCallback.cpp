@@ -76,10 +76,31 @@ void EditorTimerCallback::handleTimerCallback() {
     }
     */
     
+    // Update active slots display (which slots are currently playing)
+    std::array<bool, 5> activeSlots = editor->audioProcessor.getActiveSlots();
+    editor->screenComponent.setActiveSlots(activeSlots);
+    
     // Update playhead positions (yellow lines on waveform - one per active voice)
     std::vector<double> playheadPositions;
     std::vector<float> envelopeValues;
     editor->audioProcessor.getAllActivePlayheads(playheadPositions, envelopeValues);
     editor->screenComponent.setPlayheadPositions(playheadPositions, envelopeValues);
+    
+    // Check if waveform is empty and retry loading if sample data is now available
+    // This handles the case where the default sample loads after the editor initializes
+    static bool waveformLoadAttempted = false;
+    if (editor->waveformInitialized && !waveformLoadAttempted) {
+        std::vector<float> leftChannel, rightChannel;
+        editor->audioProcessor.getSlotStereoSampleDataForVisualization(editor->currentSlotIndex, leftChannel, rightChannel);
+        // If sample data is available, load it
+        if (!leftChannel.empty()) {
+            editor->updateWaveform(editor->currentSlotIndex);
+            editor->updateWaveformVisualization();
+            editor->updateAllSlotPreviews();
+            // Force repaint to ensure waveform is visible
+            editor->screenComponent.repaint();
+            waveformLoadAttempted = true;  // Only try once
+        }
+    }
 }
 

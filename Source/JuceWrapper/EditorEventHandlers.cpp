@@ -145,6 +145,10 @@ void EditorEventHandlers::handleLoadSampleButtonClicked() {
                     // Update UI
                     ed->currentSampleName = selectedFile.getFileName();
                     
+                    // Update sampleRate and sampleLength for the current slot
+                    ed->sampleRate = reader->sampleRate;
+                    ed->sampleLength = static_cast<int>(reader->lengthInSamples);
+                    
                     // Update sample name label with current slot letter (A-E)
                     char slotLetter = static_cast<char>('A' + slotIndex);
                     ed->sampleNameLabel.setText(juce::String::charToString(slotLetter) + ": " + ed->currentSampleName, juce::dontSendNotification);

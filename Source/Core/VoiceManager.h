@@ -41,7 +41,8 @@ public:
     // Sets parameters on the allocated voice before triggering noteOn
     bool noteOn(int note, float velocity, SampleDataPtr sampleData, bool& wasStolen, int startDelayOffset,
                 float repitchSemitones, int startPoint, int endPoint, float sampleGain,
-                float attackMs, float decayMs, float sustain, float releaseMs);
+                float attackMs, float decayMs, float sustain, float releaseMs,
+                bool loopEnabled, int loopStartPoint, int loopEndPoint);
     
     // Handle note off - releases voice playing this note
     void noteOff(int note);

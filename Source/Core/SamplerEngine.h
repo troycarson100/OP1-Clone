@@ -56,7 +56,8 @@ public:
     // Applies parameters to the allocated voice, not globally
     bool triggerNoteOnWithSample(int note, float velocity, SampleDataPtr sampleData,
                                  float repitchSemitones, int startPoint, int endPoint, float sampleGain,
-                                 float attackMs, float decayMs, float sustain, float releaseMs);
+                                 float attackMs, float decayMs, float sustain, float releaseMs,
+                                 bool loopEnabled, int loopStartPoint, int loopEndPoint);
     
     // Process audio block
     // output: non-interleaved buffer [channel][sample]
