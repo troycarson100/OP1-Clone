@@ -157,6 +157,9 @@ void EditorEventHandlers::handleLoadSampleButtonClicked() {
                     // Use the captured slotIndex to ensure we update the correct slot
                     ed->updateWaveform(slotIndex);
                     
+                    // Update all slot previews to ensure all slots show their waveforms
+                    ed->updateAllSlotPreviews();
+                    
                     ed->repaint();
                 } else {
                     // Error reading file

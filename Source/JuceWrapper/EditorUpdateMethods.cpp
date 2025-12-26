@@ -24,6 +24,8 @@ void EditorUpdateMethods::updateWaveform(int slotIndex) {
     // Safety check: if no sample data, just clear the screen and return early
     if (leftChannel.empty()) {
         editor->screenComponent.setSampleData(leftChannel);
+        // Clear preview for this slot if no sample
+        editor->screenComponent.setSlotPreview(slotIndex, std::vector<float>());
         return;
     }
     
@@ -35,115 +37,42 @@ void EditorUpdateMethods::updateWaveform(int slotIndex) {
     }
     
     // Update sample slot preview for the specified slot with left channel data
-    if (!leftChannel.empty()) {
-        // Downsample for preview (take every Nth sample to reduce data)
-        std::vector<float> previewData;
-        int downsampleFactor = static_cast<int>(leftChannel.size() / 200);  // Target ~200 points
-        if (downsampleFactor < 1) downsampleFactor = 1;
-        for (size_t i = 0; i < leftChannel.size(); i += downsampleFactor) {
-            previewData.push_back(leftChannel[i]);
-        }
-        // Update preview for the specified slot (not just slot A)
-        editor->screenComponent.setSlotPreview(slotIndex, previewData);
+        if (!leftChannel.empty()) {
+            // For preview, we can use more samples for better detail
+            // Use a reasonable downsample factor to get enough points for a good preview
+            std::vector<float> previewData;
+            int targetPoints = 400;  // More points for better waveform detail
+            int downsampleFactor = static_cast<int>(leftChannel.size() / targetPoints);
+            if (downsampleFactor < 1) downsampleFactor = 1;
+            for (size_t i = 0; i < leftChannel.size(); i += downsampleFactor) {
+                previewData.push_back(leftChannel[i]);
+            }
+            // Update preview for the specified slot (not just slot A)
+            editor->screenComponent.setSlotPreview(slotIndex, previewData);
     }
-    
-    // Get source sample rate from processor for this specific slot (for time calculations)
-    double sampleRate = editor->audioProcessor.getSlotSourceSampleRate(slotIndex);
-    if (sampleRate > 0.0) {
-        editor->sampleRate = sampleRate;
-    } else {
-        // Fallback to default
-        editor->sampleRate = 44100.0;
-    }
-    
-    // OLD ADSR visualization hiding code (COMMENTED OUT - replaced with pill component)
-    /*
-    // Ensure ADSR visualization is hidden on startup/update
-    // Remove from component tree if it was added
-    if (editor->adsrVisualization.getParentComponent() != nullptr) {
-        editor->adsrVisualization.getParentComponent()->removeChildComponent(&editor->adsrVisualization);
-    }
-    editor->adsrVisualization.setAlpha(0.0f);
-    editor->adsrVisualization.setVisible(false);
-    */
-    editor->isADSRDragging = false;
-    editor->adsrFadeOutStartTime = 0;
-    
-    // Update sample length for encoder mapping
-    int newSampleLength = static_cast<int>(leftChannel.size());
-    
-    // If this is a new sample (different length) or first load, reset to full sample view
-    bool isNewSample = (newSampleLength != editor->sampleLength);
-    
-    if (newSampleLength > 0) {
-        if (isNewSample || editor->endPoint == 0 || editor->endPoint > newSampleLength || editor->startPoint >= editor->endPoint) {
-            // Reset to show full sample
-            editor->startPoint = 0;
-            editor->endPoint = newSampleLength;
-            
-            // Update encoder positions to match (encoder2 = 0.0 for start, encoder3 = 1.0 for end)
-            editor->encoder2.setValue(0.0f);
-            editor->encoder3.setValue(1.0f);
-        }
+}
+
+void EditorUpdateMethods::updateAllSlotPreviews() {
+    // Update previews for all slots (0-4 for A-E)
+    for (int slotIndex = 0; slotIndex < 5; ++slotIndex) {
+        std::vector<float> leftChannel, rightChannel;
+        editor->audioProcessor.getSlotStereoSampleDataForVisualization(slotIndex, leftChannel, rightChannel);
         
-        editor->sampleLength = newSampleLength;
-        
-        // Update the processor with initial values
-        updateSampleEditing();
-        updateWaveformVisualization();
-        
-        // Initialize parameter displays with current values
-        float normalizedPitch = (editor->repitchSemitones + 24.0f) / 48.0f;
-        editor->paramDisplay1.setValue(normalizedPitch);
-        int semitones = static_cast<int>(std::round(editor->repitchSemitones));
-        editor->paramDisplay1.setValueText((semitones >= 0 ? "+" : "") + juce::String(semitones));
-        
-        float startValue = editor->startPoint > 0 ? static_cast<float>(editor->startPoint) / static_cast<float>(editor->sampleLength) : 0.0f;
-        editor->paramDisplay2.setValue(startValue);
-        double startTimeSeconds = static_cast<double>(editor->startPoint) / editor->sampleRate;
-        if (startTimeSeconds >= 1.0) {
-            editor->paramDisplay2.setValueText(juce::String(startTimeSeconds, 2) + "s");
+        if (!leftChannel.empty()) {
+            // For preview, we can use more samples for better detail
+            // Use a reasonable downsample factor to get enough points for a good preview
+            std::vector<float> previewData;
+            int targetPoints = 400;  // More points for better waveform detail
+            int downsampleFactor = static_cast<int>(leftChannel.size() / targetPoints);
+            if (downsampleFactor < 1) downsampleFactor = 1;
+            for (size_t i = 0; i < leftChannel.size(); i += downsampleFactor) {
+                previewData.push_back(leftChannel[i]);
+            }
+            // Update preview for this slot
+            editor->screenComponent.setSlotPreview(slotIndex, previewData);
         } else {
-            editor->paramDisplay2.setValueText(juce::String(static_cast<int>(startTimeSeconds * 1000.0)) + "ms");
-        }
-        
-        float endValue = editor->endPoint > 0 ? static_cast<float>(editor->endPoint) / static_cast<float>(editor->sampleLength) : 1.0f;
-        editor->paramDisplay3.setValue(endValue);
-        double endTimeSeconds = static_cast<double>(editor->endPoint) / editor->sampleRate;
-        if (endTimeSeconds >= 1.0) {
-            editor->paramDisplay3.setValueText(juce::String(endTimeSeconds, 2) + "s");
-        } else {
-            editor->paramDisplay3.setValueText(juce::String(static_cast<int>(endTimeSeconds * 1000.0)) + "ms");
-        }
-        
-        editor->paramDisplay4.setValue(editor->sampleGain / 2.0f);
-        editor->paramDisplay4.setValueText(juce::String(editor->sampleGain, 2) + "x");
-        
-        float attackValue = editor->adsrAttackMs / 10000.0f;
-        editor->paramDisplay5.setValue(attackValue);
-        if (editor->adsrAttackMs >= 1000.0f) {
-            editor->paramDisplay5.setValueText(juce::String(editor->adsrAttackMs / 1000.0f, 2) + "s");
-        } else {
-            editor->paramDisplay5.setValueText(juce::String(static_cast<int>(editor->adsrAttackMs)) + "ms");
-        }
-        
-        float decayValue = editor->adsrDecayMs / 20000.0f;
-        editor->paramDisplay6.setValue(decayValue);
-        if (editor->adsrDecayMs >= 1000.0f) {
-            editor->paramDisplay6.setValueText(juce::String(editor->adsrDecayMs / 1000.0f, 2) + "s");
-        } else {
-            editor->paramDisplay6.setValueText(juce::String(static_cast<int>(editor->adsrDecayMs)) + "ms");
-        }
-        
-        editor->paramDisplay7.setValue(editor->adsrSustain);
-        editor->paramDisplay7.setValueText(juce::String(static_cast<int>(editor->adsrSustain * 100.0f)) + "%");
-        
-        float releaseValue = editor->adsrReleaseMs / 20000.0f;
-        editor->paramDisplay8.setValue(releaseValue);
-        if (editor->adsrReleaseMs >= 1000.0f) {
-            editor->paramDisplay8.setValueText(juce::String(editor->adsrReleaseMs / 1000.0f, 2) + "s");
-        } else {
-            editor->paramDisplay8.setValueText(juce::String(static_cast<int>(editor->adsrReleaseMs)) + "ms");
+            // Clear preview for slots without samples
+            editor->screenComponent.setSlotPreview(slotIndex, std::vector<float>());
         }
     }
 }

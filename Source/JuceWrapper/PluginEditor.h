@@ -158,6 +158,7 @@ private:
     // Update waveform visualization
     void updateWaveform();
     void updateWaveform(int slotIndex);  // Update waveform for a specific slot
+    void updateAllSlotPreviews();  // Update previews for all slots that have samples
     
     juce::String currentSampleName;
     

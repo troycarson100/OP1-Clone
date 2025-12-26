@@ -21,6 +21,7 @@ void SampleSlotComponent::setSlotPreview(int slotIndex, const std::vector<float>
 {
     if (slotIndex >= 0 && slotIndex < NUM_SLOTS) {
         slotPreviewData[slotIndex] = sampleData;
+        // Force a repaint to update the preview
         repaint();
     }
 }
@@ -81,14 +82,17 @@ void SampleSlotComponent::drawSlot(juce::Graphics& g, int slotIndex, const juce:
     g.drawText(labelText, labelBounds, juce::Justification::bottomLeft);
     
     // Draw waveform preview if available for this slot
-    if (!slotPreviewData[slotIndex].empty()) {
-        juce::Rectangle<int> previewBounds = bounds.reduced(4, 20);  // Leave space for label
-        drawWaveformPreview(g, previewBounds, slotPreviewData[slotIndex]);
+    if (!slotPreviewData[slotIndex].empty() && slotPreviewData[slotIndex].size() > 0) {
+        // Leave space for label at bottom (about 18px for text)
+        juce::Rectangle<int> previewBounds = bounds.reduced(4, 20);
+        if (previewBounds.getHeight() > 5 && previewBounds.getWidth() > 5) {
+            drawWaveformPreview(g, previewBounds, slotPreviewData[slotIndex]);
+        }
         
-        // Draw blue selection bar above slot if it has a sample
+        // Draw blue indicator bar at top of slot if it has a sample
         g.setColour(juce::Colour(0xFF4A90E2));  // Bright blue
-        int barHeight = 3;
-        g.fillRect(bounds.getX(), bounds.getY() - barHeight, bounds.getWidth(), barHeight);
+        int barHeight = 2;
+        g.fillRect(bounds.getX(), bounds.getY(), bounds.getWidth(), barHeight);
     }
 }
 
@@ -101,32 +105,114 @@ void SampleSlotComponent::drawWaveformPreview(juce::Graphics& g, const juce::Rec
     // Draw waveform preview in blue
     g.setColour(juce::Colour(0xFF5BA3E8));  // Slightly lighter blue for waveform
     
-    size_t numPoints = juce::jmin(data.size(), static_cast<size_t>(bounds.getWidth()));
-    if (numPoints < 2) return;
+    int displayWidth = bounds.getWidth();
+    int displayHeight = bounds.getHeight();
     
-    juce::Path waveformPath;
-    float centerY = bounds.getCentreY();
-    float halfHeight = bounds.getHeight() * 0.4f;  // Use 40% of height for waveform
+    if (displayWidth < 2) return;
     
-    // Start path
-    float firstX = static_cast<float>(bounds.getX());
-    float firstY = centerY - (data[0] * halfHeight);
-    waveformPath.startNewSubPath(firstX, firstY);
-    
-    // Draw waveform
-    for (size_t i = 1; i < numPoints; ++i) {
-        float x = static_cast<float>(bounds.getX()) + (static_cast<float>(i) / static_cast<float>(numPoints - 1)) * static_cast<float>(bounds.getWidth());
-        float y = centerY - (data[i] * halfHeight);
-        waveformPath.lineTo(x, y);
+    // Find peak value for normalization
+    float maxAbs = 0.0f;
+    for (float sample : data) {
+        float absVal = std::abs(sample);
+        if (absVal > maxAbs) {
+            maxAbs = absVal;
+        }
     }
     
-    // Create filled shape (mirror for top and bottom)
-    juce::Path filledPath = waveformPath;
-    filledPath.lineTo(static_cast<float>(bounds.getRight()), centerY);
-    filledPath.lineTo(static_cast<float>(bounds.getX()), centerY);
-    filledPath.closeSubPath();
+    // If all values are zero or very small, don't draw
+    if (maxAbs < 0.001f) return;
     
-    g.fillPath(filledPath);
+    // Normalize factor (scale to use most of the height, centered)
+    float normalizeFactor = (displayHeight * 0.85f) / maxAbs;  // Use 85% of height
+    
+    float centerY = bounds.getCentreY();
+    float leftX = static_cast<float>(bounds.getX());
+    float rightX = static_cast<float>(bounds.getRight());
+    
+    // For each pixel column, find min/max values to create a proper waveform visualization
+    // This creates a shrunken/mini version that looks like the actual waveform
+    float samplesPerPixel = static_cast<float>(data.size()) / static_cast<float>(displayWidth);
+    
+    // Build a path for the filled waveform
+    juce::Path waveformPath;
+    std::vector<float> maxYValues;
+    std::vector<float> minYValues;
+    
+    // First pass: collect min/max for each pixel column
+    for (int x = 0; x < displayWidth; ++x) {
+        // Calculate which samples correspond to this pixel column
+        float startSample = x * samplesPerPixel;
+        float endSample = (x + 1) * samplesPerPixel;
+        
+        // Find min and max in this range
+        bool foundSample = false;
+        float minVal = 0.0f;
+        float maxVal = 0.0f;
+        int startIdx = static_cast<int>(startSample);
+        int endIdx = static_cast<int>(std::ceil(endSample));
+        
+        // Ensure we don't go out of bounds
+        if (startIdx < 0) startIdx = 0;
+        if (endIdx > static_cast<int>(data.size())) endIdx = static_cast<int>(data.size());
+        if (endIdx <= startIdx) {
+            if (startIdx < static_cast<int>(data.size())) {
+                endIdx = startIdx + 1;
+            } else {
+                // No samples for this pixel - use center line
+                maxYValues.push_back(centerY);
+                minYValues.push_back(centerY);
+                continue;
+            }
+        }
+        
+        // Find min/max in this pixel's sample range
+        for (int i = startIdx; i < endIdx && i < static_cast<int>(data.size()); ++i) {
+            float val = data[i];
+            if (!foundSample) {
+                minVal = val;
+                maxVal = val;
+                foundSample = true;
+            } else {
+                if (val < minVal) minVal = val;
+                if (val > maxVal) maxVal = val;
+            }
+        }
+        
+        // If we found samples, calculate Y positions; otherwise use center
+        if (foundSample) {
+            float maxY = centerY - (maxVal * normalizeFactor);
+            float minY = centerY - (minVal * normalizeFactor);
+            maxYValues.push_back(maxY);
+            minYValues.push_back(minY);
+        } else {
+            maxYValues.push_back(centerY);
+            minYValues.push_back(centerY);
+        }
+    }
+    
+    // Build filled path: top curve (max values) going left to right, then bottom curve (min values) going right to left
+    if (!maxYValues.empty() && maxYValues.size() == minYValues.size()) {
+        // Start at first max point (top left)
+        waveformPath.startNewSubPath(leftX, maxYValues[0]);
+        
+        // Draw top curve (max values) from left to right
+        for (size_t i = 1; i < maxYValues.size(); ++i) {
+            float x = leftX + (static_cast<float>(i) / static_cast<float>(maxYValues.size() - 1)) * (rightX - leftX);
+            waveformPath.lineTo(x, maxYValues[i]);
+        }
+        
+        // Draw bottom curve (min values) from right to left
+        for (int i = static_cast<int>(minYValues.size()) - 1; i >= 0; --i) {
+            float x = leftX + (static_cast<float>(i) / static_cast<float>(minYValues.size() - 1)) * (rightX - leftX);
+            waveformPath.lineTo(x, minYValues[i]);
+        }
+        
+        // Close the path back to start
+        waveformPath.closeSubPath();
+        
+        // Fill the waveform
+        g.fillPath(waveformPath);
+    }
 }
 
 void SampleSlotComponent::resized()

@@ -218,10 +218,11 @@ Op1CloneAudioProcessorEditor::Op1CloneAudioProcessorEditor(Op1CloneAudioProcesso
     addAndMakeVisible(&paramDisplay7);
     addAndMakeVisible(&paramDisplay8);
     
-    // Setup load sample button
-    loadSampleButton.setButtonText("Load Sample...");
+    // Setup load sample button (hidden - functionality moved to menu encoder center button)
+    loadSampleButton.setButtonText("");
+    loadSampleButton.setVisible(false);
     loadSampleButton.onClick = [this] { loadSampleButtonClicked(); };
-    addAndMakeVisible(&loadSampleButton);
+    addChildComponent(&loadSampleButton);  // Use addChildComponent since it's hidden
     
     // Time-warp toggle (larger, more visible) - COMMENTED OUT
     /*
@@ -430,6 +431,8 @@ void Op1CloneAudioProcessorEditor::resized() {
     if (!waveformInitialized) {
         waveformInitialized = true;
         updateWaveform();
+        // Update all slot previews to show waveforms for any loaded samples
+        updateAllSlotPreviews();
     }
     
     // OLD final safety check (COMMENTED OUT - replaced with pill component)
@@ -492,6 +495,12 @@ void Op1CloneAudioProcessorEditor::updateWaveform(int slotIndex) {
     // Delegate to update methods manager with specific slot index
     EditorUpdateMethods updateMethods(this);
     updateMethods.updateWaveform(slotIndex);
+}
+
+void Op1CloneAudioProcessorEditor::updateAllSlotPreviews() {
+    // Delegate to update methods manager
+    EditorUpdateMethods updateMethods(this);
+    updateMethods.updateAllSlotPreviews();
 }
 
 void Op1CloneAudioProcessorEditor::buttonClicked(juce::Button* button) {
@@ -624,8 +633,10 @@ void Op1CloneAudioProcessorEditor::setupMenuEncoder() {
         if (instrumentMenuOpen) {
             // Select instrument when menu is open
             screenComponent.selectInstrument();
+        } else {
+            // When instrument menu is closed, center button loads sample for current slot
+            loadSampleButtonClicked();
         }
-        // Button press doesn't do anything for slot selection (slots are selected by rotation)
     };
 }
 
@@ -703,9 +714,11 @@ void Op1CloneAudioProcessorEditor::loadStateFromSlot(int slotIndex) {
     updateShiftModeDisplayValues();
     updateWaveformVisualization();
     
-    // Update waveform and slot preview for the loaded slot
-    // This ensures the preview is refreshed when switching slots
+    // Update waveform for the loaded slot
     updateWaveform(slotIndex);
+    
+    // Update all slot previews to ensure all slots show their waveforms correctly
+    updateAllSlotPreviews();
     
     // Update parameter display labels to reflect loaded values
     updateParameterDisplayLabels();

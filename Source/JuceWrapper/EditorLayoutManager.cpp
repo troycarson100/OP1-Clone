@@ -157,7 +157,8 @@ void EditorLayoutManager::layoutComponents() {
                                       20);
     
     // Under screen: Load sample button (directly below the screen)
-    editor->loadSampleButton.setBounds(screenArea.removeFromTop(40).reduced(10));
+    // Load sample button is hidden (functionality moved to menu encoder center button)
+    // editor->loadSampleButton.setBounds(screenArea.removeFromTop(40).reduced(10));
     
     // Right side: Encoders in two horizontal rows, top-aligned with screen
     // Move encoders left by positioning them closer to the screen and making them smaller

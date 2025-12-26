@@ -13,7 +13,8 @@ public:
     
     // Update waveform visualization
     void updateWaveform();
-    void updateWaveform(int slotIndex);  // Update waveform for a specific slot
+    void updateWaveform(int slotIndex);
+    void updateAllSlotPreviews();  // Update previews for all slots that have samples  // Update waveform for a specific slot
     
     // Update ADSR visualization and send to processor
     void updateADSR();
