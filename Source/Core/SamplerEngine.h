@@ -48,6 +48,16 @@ public:
     // Push MIDI event from UI/MIDI thread (non-blocking, lock-free)
     bool pushMidiEvent(const MidiEvent& event);
     
+    // Trigger note on immediately with specific sample data (for stacked playback)
+    // This bypasses the queue and processes the note immediately with the given sample
+    bool triggerNoteOnWithSample(int note, float velocity, SampleDataPtr sampleData);
+    
+    // Trigger note on with sample data and slot-specific parameters
+    // Applies parameters to the allocated voice, not globally
+    bool triggerNoteOnWithSample(int note, float velocity, SampleDataPtr sampleData,
+                                 float repitchSemitones, int startPoint, int endPoint, float sampleGain,
+                                 float attackMs, float decayMs, float sustain, float releaseMs);
+    
     // Process audio block
     // output: non-interleaved buffer [channel][sample]
     void process(float** output, int numChannels, int numSamples);

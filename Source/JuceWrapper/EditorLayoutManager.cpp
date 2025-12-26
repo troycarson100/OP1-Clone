@@ -26,25 +26,35 @@ void EditorLayoutManager::layoutComponents() {
     
     auto bounds = editor->getLocalBounds();
     
-    // Top left: Master gain knob
+    // Top left: Master gain knob - keep in place
     auto topLeftArea = bounds.removeFromLeft(150).removeFromTop(150).reduced(10);
     auto gainArea = topLeftArea;
     editor->gainSlider.setBounds(gainArea.removeFromTop(120).reduced(10));
     editor->volumeLabel.setBounds(gainArea.reduced(5));  // "Volume" text under the knob
     
-    // Left side: Time Warp and Shift toggles (before screen)
-    auto leftControlsArea = bounds.removeFromLeft(200).reduced(10);
+    // Left side: Time Warp and Shift toggles (before screen) - keep shift in place
+    auto leftControlsArea = bounds.removeFromLeft(100).reduced(10);  // Reduced width
     
     // Time-warp toggle - COMMENTED OUT
     // editor->warpToggleButton.setBounds(leftControlsArea.removeFromTop(40).reduced(5));
     
-    // Shift toggle button (wide enough for "shift" text)
+    // Shift toggle button (wide enough for "shift" text) - keep in place
     auto shiftButtonArea = leftControlsArea.removeFromTop(50);
     int shiftButtonWidth = 80;  // Wide enough for "shift" text
     editor->shiftToggleButton.setBounds(shiftButtonArea.removeFromLeft(shiftButtonWidth).reduced(5));
     
-    // Middle: Screen component (30% wider than before)
-    auto screenArea = bounds.removeFromLeft(bounds.getWidth() * 0.65 * 0.78); // 65% * 78% = ~51% (30% wider than 39%)
+    // Menu encoder (outside screen component, closer to shift button)
+    int menuEncoderSize = 60;
+    int menuEncoderX = bounds.getX() + 5;  // Move closer to left
+    int menuEncoderY = bounds.getY() + 20;
+    editor->menuEncoder.setBounds(menuEncoderX, menuEncoderY, menuEncoderSize, menuEncoderSize);
+    
+    // Adjust bounds to account for menu encoder (less padding)
+    bounds.removeFromLeft(menuEncoderSize + 10);  // Reduced padding
+    
+    // Middle: Screen component - make it narrower to fit everything
+    int screenWidth = 400;  // Fixed width instead of percentage
+    auto screenArea = bounds.removeFromLeft(screenWidth);
     auto screenBounds = screenArea.removeFromTop(static_cast<int>(screenArea.getHeight() * 0.6)); // 40% reduction = 60% of original
     editor->screenComponent.setBounds(screenBounds.reduced(10));
     
@@ -57,11 +67,12 @@ void EditorLayoutManager::layoutComponents() {
     
     // Parameter displays at bottom of screen module (2 rows of 4)
     // Position them at the very bottom, ensuring they don't overlap the waveform
-    // Add 5px padding around the group
+    // Add more padding between sample slots and parameter displays
     int paramDisplayHeight = 40;
     int paramDisplaySpacing = 5;
     int paramGroupPadding = 5; // Padding around the entire group
     int paramBottomPadding = 5; // Padding from bottom edge
+    int paddingAboveParams = 15; // More padding between sample slots and parameter displays
     int totalParamHeight = paramDisplayHeight * 2 + paramDisplaySpacing;
     
     // Calculate available width for displays (with group padding)
@@ -72,8 +83,9 @@ void EditorLayoutManager::layoutComponents() {
     int paramStartX = screenComponentBounds.getX() + paramGroupPadding;
     
     // Calculate Y positions from the bottom of the screen component
+    // Add extra padding above parameter displays (between sample slots and params)
     int paramBottomRowY = screenComponentBounds.getBottom() - paramBottomPadding - paramDisplayHeight;
-    int paramTopRowY = paramBottomRowY - paramDisplayHeight - paramDisplaySpacing;
+    int paramTopRowY = paramBottomRowY - paramDisplayHeight - paramDisplaySpacing - paddingAboveParams + 15;  // Move top row down 15px for more padding
     
     // Top row: Pitch, Start, End, Gain
     editor->paramDisplay1.setBounds(paramStartX, paramTopRowY, paramDisplayWidth, paramDisplayHeight);
@@ -147,36 +159,32 @@ void EditorLayoutManager::layoutComponents() {
     // Under screen: Load sample button (directly below the screen)
     editor->loadSampleButton.setBounds(screenArea.removeFromTop(40).reduced(10));
     
-    // Right side: Encoders in two horizontal rows, bottom-aligned with screen
-    auto encoderArea = bounds.reduced(10);
-    int encoderSize = 80;
-    int encoderSpacing = 15;
-    int rowSpacing = 20; // Vertical spacing between rows
+    // Right side: Encoders in two horizontal rows, top-aligned with screen
+    // Move encoders left by positioning them closer to the screen and making them smaller
+    int encoderSize = 70;  // Reduced from 80 to 70
+    int encoderSpacing = 8;  // Reduced spacing
+    int rowSpacing = 15; // Reduced vertical spacing
     
-    // Get screen component bottom position for alignment
-    int screenBottom = screenComponentBounds.getBottom();
+    // Get screen component top position for alignment
+    int screenTop = screenComponentBounds.getY();
     
     // Calculate total width needed for 4 encoders
     int totalEncoderWidth = (encoderSize * 4) + (encoderSpacing * 3);
     
-    // Position encoders to the right of the screen
-    int encoderStartX = encoderArea.getX() + 20; // Start position on the right side
+    // Position encoders immediately after screen (minimal gap)
+    int encoderStartX = screenComponentBounds.getRight() + 5; // Minimal gap after screen
     
-    // Position encoders so bottom row aligns with bottom of screen
-    int bottomRowY = screenBottom - encoderSize / 2; // Center encoders vertically on bottom edge
-    int topRowY = bottomRowY - encoderSize - rowSpacing;
+    // Check if encoders would overflow - if so, reduce size further
+    int maxAvailableWidth = editor->getWidth() - encoderStartX - 20; // Leave 20px margin on right
+    if (totalEncoderWidth > maxAvailableWidth) {
+        // Recalculate to fit
+        encoderSize = (maxAvailableWidth - (encoderSpacing * 3)) / 4;
+        totalEncoderWidth = (encoderSize * 4) + (encoderSpacing * 3);
+    }
     
-    // 5 square buttons above encoders, spreading the same width as encoders
-    int buttonSpacing = 10; // Spacing between buttons
-    int buttonSize = (totalEncoderWidth - (buttonSpacing * 4)) / 5; // Calculate button size to match encoder width
-    int buttonStartX = encoderStartX; // Align with encoder start
-    int buttonY = topRowY - encoderSize / 2 - buttonSize - rowSpacing; // Position above top row of encoders
-    
-    editor->squareButton1.setBounds(buttonStartX, buttonY, buttonSize, buttonSize);
-    editor->squareButton2.setBounds(buttonStartX + buttonSize + buttonSpacing, buttonY, buttonSize, buttonSize);
-    editor->squareButton3.setBounds(buttonStartX + (buttonSize + buttonSpacing) * 2, buttonY, buttonSize, buttonSize);
-    editor->squareButton4.setBounds(buttonStartX + (buttonSize + buttonSpacing) * 3, buttonY, buttonSize, buttonSize);
-    editor->squareButton5.setBounds(buttonStartX + (buttonSize + buttonSpacing) * 4, buttonY, buttonSize, buttonSize);
+    // Position encoders so top row aligns with top of screen
+    int topRowY = screenTop + encoderSize / 2; // Center encoders vertically on top edge
+    int bottomRowY = topRowY + encoderSize + rowSpacing;
     
     // Top row (encoders 1-4)
     editor->encoder1.setBounds(encoderStartX, topRowY - encoderSize / 2, encoderSize, encoderSize);
@@ -184,11 +192,23 @@ void EditorLayoutManager::layoutComponents() {
     editor->encoder3.setBounds(encoderStartX + (encoderSize + encoderSpacing) * 2, topRowY - encoderSize / 2, encoderSize, encoderSize);
     editor->encoder4.setBounds(encoderStartX + (encoderSize + encoderSpacing) * 3, topRowY - encoderSize / 2, encoderSize, encoderSize);
     
-    // Bottom row (encoders 5-8) - aligned with bottom of screen
+    // Bottom row (encoders 5-8)
     editor->encoder5.setBounds(encoderStartX, bottomRowY - encoderSize / 2, encoderSize, encoderSize);
     editor->encoder6.setBounds(encoderStartX + encoderSize + encoderSpacing, bottomRowY - encoderSize / 2, encoderSize, encoderSize);
     editor->encoder7.setBounds(encoderStartX + (encoderSize + encoderSpacing) * 2, bottomRowY - encoderSize / 2, encoderSize, encoderSize);
     editor->encoder8.setBounds(encoderStartX + (encoderSize + encoderSpacing) * 3, bottomRowY - encoderSize / 2, encoderSize, encoderSize);
+    
+    // 5 square buttons below encoders, spreading the same width as encoders
+    int buttonSpacing = 8; // Reduced spacing
+    int buttonSize = (totalEncoderWidth - (buttonSpacing * 4)) / 5; // Calculate button size to match encoder width
+    int buttonStartX = encoderStartX; // Align with encoder start
+    int buttonY = bottomRowY + encoderSize / 2 + rowSpacing; // Position below bottom row of encoders
+    
+    editor->squareButton1.setBounds(buttonStartX, buttonY, buttonSize, buttonSize);
+    editor->squareButton2.setBounds(buttonStartX + buttonSize + buttonSpacing, buttonY, buttonSize, buttonSize);
+    editor->squareButton3.setBounds(buttonStartX + (buttonSize + buttonSpacing) * 2, buttonY, buttonSize, buttonSize);
+    editor->squareButton4.setBounds(buttonStartX + (buttonSize + buttonSpacing) * 3, buttonY, buttonSize, buttonSize);
+    editor->squareButton5.setBounds(buttonStartX + (buttonSize + buttonSpacing) * 4, buttonY, buttonSize, buttonSize);
     
     // MIDI status at bottom
     auto statusBounds = editor->getLocalBounds().removeFromBottom(25);

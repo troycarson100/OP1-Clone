@@ -171,8 +171,11 @@ void Op1CloneAudioProcessor::loadDefaultSample() {
     juce::AudioBuffer<float> testBuffer;
     generateTestTone(testBuffer, 44100.0, 440.0f, 1.0);
     
-    // Pass to adapter
+    // Pass to adapter (sets default sample for backward compatibility)
     adapter.setSample(testBuffer, 44100.0);
+    
+    // Also save to slot 0 (default slot)
+    adapter.setSampleForSlot(0, testBuffer, 44100.0);
 }
 
 
@@ -298,6 +301,9 @@ bool Op1CloneAudioProcessor::loadSampleFromFile(const juce::File& file) {
     // Pass to adapter (will extract mono from first channel)
     adapter.setSample(sampleBuffer, reader->sampleRate);
     
+    // Also update slot 0 to keep it in sync with the default sample
+    adapter.setSampleForSlot(0, sampleBuffer, reader->sampleRate);
+    
     // #region agent log
     {
         std::ofstream log("/Users/troycarson/Documents/JUCE Projects/OP1-Clone/.cursor/debug.log", std::ios::app);
@@ -318,8 +324,16 @@ void Op1CloneAudioProcessor::getStereoSampleDataForVisualization(std::vector<flo
     adapter.getStereoSampleDataForVisualization(outLeft, outRight);
 }
 
+void Op1CloneAudioProcessor::getSlotStereoSampleDataForVisualization(int slotIndex, std::vector<float>& outLeft, std::vector<float>& outRight) const {
+    adapter.getSlotStereoSampleDataForVisualization(slotIndex, outLeft, outRight);
+}
+
 double Op1CloneAudioProcessor::getSourceSampleRate() const {
     return adapter.getSourceSampleRate();
+}
+
+double Op1CloneAudioProcessor::getSlotSourceSampleRate(int slotIndex) const {
+    return adapter.getSlotSourceSampleRate(slotIndex);
 }
 
 void Op1CloneAudioProcessor::setLPFilterCutoff(float cutoffHz) {
@@ -342,6 +356,50 @@ void Op1CloneAudioProcessor::setLPFilterDrive(float driveDb) {
 
 void Op1CloneAudioProcessor::setPlaybackMode(bool polyphonic) {
     adapter.setPlaybackMode(polyphonic);
+}
+
+void Op1CloneAudioProcessor::setPlaybackMode(int mode) {
+    adapter.setPlaybackMode(mode);
+}
+
+void Op1CloneAudioProcessor::setSampleForSlot(int slotIndex, juce::AudioBuffer<float>& buffer, double sourceSampleRate) {
+    adapter.setSampleForSlot(slotIndex, buffer, sourceSampleRate);
+}
+
+void Op1CloneAudioProcessor::setSlotRepitch(int slotIndex, float semitones) {
+    adapter.setSlotRepitch(slotIndex, semitones);
+}
+
+void Op1CloneAudioProcessor::setSlotStartPoint(int slotIndex, int sampleIndex) {
+    adapter.setSlotStartPoint(slotIndex, sampleIndex);
+}
+
+void Op1CloneAudioProcessor::setSlotEndPoint(int slotIndex, int sampleIndex) {
+    adapter.setSlotEndPoint(slotIndex, sampleIndex);
+}
+
+void Op1CloneAudioProcessor::setSlotSampleGain(int slotIndex, float gain) {
+    adapter.setSlotSampleGain(slotIndex, gain);
+}
+
+void Op1CloneAudioProcessor::setSlotADSR(int slotIndex, float attackMs, float decayMs, float sustain, float releaseMs) {
+    adapter.setSlotADSR(slotIndex, attackMs, decayMs, sustain, releaseMs);
+}
+
+float Op1CloneAudioProcessor::getSlotRepitch(int slotIndex) const {
+    return adapter.getSlotRepitch(slotIndex);
+}
+
+int Op1CloneAudioProcessor::getSlotStartPoint(int slotIndex) const {
+    return adapter.getSlotStartPoint(slotIndex);
+}
+
+int Op1CloneAudioProcessor::getSlotEndPoint(int slotIndex) const {
+    return adapter.getSlotEndPoint(slotIndex);
+}
+
+float Op1CloneAudioProcessor::getSlotSampleGain(int slotIndex) const {
+    return adapter.getSlotSampleGain(slotIndex);
 }
 
 void Op1CloneAudioProcessor::setLoopEnabled(bool enabled) {

@@ -1,12 +1,18 @@
 #include "ScreenComponent.h"
 
-ScreenComponent::ScreenComponent() {
+ScreenComponent::ScreenComponent()
+    : selectedSlot(0)  // Start with slot A selected
+{
     // OP-1 style colors
-    backgroundColor = juce::Colour(0xFF1A1A1A); // Dark gray background
+    backgroundColor = juce::Colours::black; // Black background
     borderColor = juce::Colour(0xFF333333);     // Lighter gray border
     
     // Add waveform component
     addAndMakeVisible(&waveformComponent);
+    
+    // Add sample slot component (5 slots A-E)
+    sampleSlotComponent.setInterceptsMouseClicks(false, false);
+    addAndMakeVisible(&sampleSlotComponent);
     
     // Add instrument menu (hidden by default)
     // Menu should be on top and opaque to cover everything
@@ -35,10 +41,28 @@ void ScreenComponent::resized() {
     // Reserve space at bottom for parameter displays (2 rows of 35px + spacing = ~80px)
     int paramDisplayAreaHeight = 80;
     bounds.removeFromBottom(paramDisplayAreaHeight);
+    
+    // Reserve space for sample slots (under waveform, left of ADSR pill)
+    int sampleSlotHeight = 35;  // Less tall
+    auto slotArea = bounds.removeFromBottom(sampleSlotHeight);
     waveformComponent.setBounds(bounds);
+    
+    // Sample slots positioned at bottom left (before ADSR pill area)
+    // Leave space on right for ADSR pill (about 30% of width)
+    // Move up 10px from the calculated position
+    int slotWidth = static_cast<int>(slotArea.getWidth() * 0.75f);  // Wider (75% instead of 70%)
+    sampleSlotComponent.setBounds(slotArea.getX(), slotArea.getY() - 10, slotWidth, sampleSlotHeight);
     
     // Instrument menu fills entire screen component
     instrumentMenu.setBounds(getLocalBounds());
+}
+
+void ScreenComponent::setSelectedSlot(int slotIndex) {
+    if (slotIndex >= 0 && slotIndex < 5) {
+        selectedSlot = slotIndex;
+        sampleSlotComponent.setSelectedSlot(slotIndex);
+        repaint();
+    }
 }
 
 void ScreenComponent::setSampleData(const std::vector<float>& data) {
@@ -121,5 +145,14 @@ void ScreenComponent::selectInstrument() {
 
 void ScreenComponent::setInstrumentMenuCallback(std::function<void(const juce::String&)> callback) {
     instrumentMenu.onInstrumentSelected = callback;
+}
+
+void ScreenComponent::setSlotAPreview(const std::vector<float>& sampleData) {
+    // Legacy method - delegate to new method
+    setSlotPreview(0, sampleData);
+}
+
+void ScreenComponent::setSlotPreview(int slotIndex, const std::vector<float>& sampleData) {
+    sampleSlotComponent.setSlotPreview(slotIndex, sampleData);
 }
 

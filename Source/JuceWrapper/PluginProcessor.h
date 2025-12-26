@@ -54,12 +54,32 @@ public:
     // Load sample from file (called from UI thread)
     bool loadSampleFromFile(const juce::File& file);
     
+    // Set sample for a specific slot (0-4 for A-E)
+    void setSampleForSlot(int slotIndex, juce::AudioBuffer<float>& buffer, double sourceSampleRate);
+    
+    // Set parameters for a specific slot (0-4 for A-E)
+    void setSlotRepitch(int slotIndex, float semitones);
+    void setSlotStartPoint(int slotIndex, int sampleIndex);
+    void setSlotEndPoint(int slotIndex, int sampleIndex);
+    void setSlotSampleGain(int slotIndex, float gain);
+    void setSlotADSR(int slotIndex, float attackMs, float decayMs, float sustain, float releaseMs);
+    
+    // Get parameters for a specific slot (0-4 for A-E)
+    float getSlotRepitch(int slotIndex) const;
+    int getSlotStartPoint(int slotIndex) const;
+    int getSlotEndPoint(int slotIndex) const;
+    float getSlotSampleGain(int slotIndex) const;
+    
     // Get sample data for visualization (thread-safe)
     void getSampleDataForVisualization(std::vector<float>& outData) const;
     void getStereoSampleDataForVisualization(std::vector<float>& outLeft, std::vector<float>& outRight) const;
+    void getSlotStereoSampleDataForVisualization(int slotIndex, std::vector<float>& outLeft, std::vector<float>& outRight) const;
     
     // Get source sample rate (for time calculations)
     double getSourceSampleRate() const;
+    
+    // Get source sample rate for a specific slot (for time calculations)
+    double getSlotSourceSampleRate(int slotIndex) const;
     
     // Set LP filter parameters
     void setLPFilterCutoff(float cutoffHz);
@@ -76,6 +96,9 @@ public:
     
     // Set playback mode (mono or poly)
     void setPlaybackMode(bool polyphonic);  // true = poly, false = mono
+    
+    // Set sample playback mode (0 = Stacked, 1 = Round Robin)
+    void setPlaybackMode(int mode);  // 0 = Stacked, 1 = Round Robin
     
     // Set loop parameters
     void setLoopEnabled(bool enabled);

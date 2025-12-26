@@ -12,9 +12,14 @@ EditorUpdateMethods::EditorUpdateMethods(Op1CloneAudioProcessorEditor* editor)
 }
 
 void EditorUpdateMethods::updateWaveform() {
-    // Get stereo sample data from processor and update screen
+    // Use current slot index
+    updateWaveform(editor->currentSlotIndex);
+}
+
+void EditorUpdateMethods::updateWaveform(int slotIndex) {
+    // Get stereo sample data from processor for the specified slot
     std::vector<float> leftChannel, rightChannel;
-    editor->audioProcessor.getStereoSampleDataForVisualization(leftChannel, rightChannel);
+    editor->audioProcessor.getSlotStereoSampleDataForVisualization(slotIndex, leftChannel, rightChannel);
     
     // Safety check: if no sample data, just clear the screen and return early
     if (leftChannel.empty()) {
@@ -29,10 +34,26 @@ void EditorUpdateMethods::updateWaveform() {
         editor->screenComponent.setSampleData(leftChannel);
     }
     
-    // Get source sample rate from processor (for time calculations)
-    double sampleRate = editor->audioProcessor.getSourceSampleRate();
+    // Update sample slot preview for the specified slot with left channel data
+    if (!leftChannel.empty()) {
+        // Downsample for preview (take every Nth sample to reduce data)
+        std::vector<float> previewData;
+        int downsampleFactor = static_cast<int>(leftChannel.size() / 200);  // Target ~200 points
+        if (downsampleFactor < 1) downsampleFactor = 1;
+        for (size_t i = 0; i < leftChannel.size(); i += downsampleFactor) {
+            previewData.push_back(leftChannel[i]);
+        }
+        // Update preview for the specified slot (not just slot A)
+        editor->screenComponent.setSlotPreview(slotIndex, previewData);
+    }
+    
+    // Get source sample rate from processor for this specific slot (for time calculations)
+    double sampleRate = editor->audioProcessor.getSlotSourceSampleRate(slotIndex);
     if (sampleRate > 0.0) {
         editor->sampleRate = sampleRate;
+    } else {
+        // Fallback to default
+        editor->sampleRate = 44100.0;
     }
     
     // OLD ADSR visualization hiding code (COMMENTED OUT - replaced with pill component)
@@ -140,8 +161,9 @@ void EditorUpdateMethods::updateADSR() {
     }
     */
     
-    // Send to processor (always update the audio processor)
-    editor->audioProcessor.setADSR(editor->adsrAttackMs, editor->adsrDecayMs, editor->adsrSustain, editor->adsrReleaseMs);
+    // NOTE: We no longer update global engine parameters here because we use per-slot parameters
+    // The encoder callbacks update the current slot's parameters directly via setSlotADSR
+    // This prevents parameters from one slot from affecting voices playing from other slots
 }
 
 void EditorUpdateMethods::updateParameterDisplay(const juce::String& paramName, float value) {
@@ -183,11 +205,10 @@ void EditorUpdateMethods::updateParameterDisplay(const juce::String& paramName, 
 }
 
 void EditorUpdateMethods::updateSampleEditing() {
-    // Send sample editing parameters to processor
-    editor->audioProcessor.setRepitch(editor->repitchSemitones);
-    editor->audioProcessor.setStartPoint(editor->startPoint);
-    editor->audioProcessor.setEndPoint(editor->endPoint);
-    editor->audioProcessor.setSampleGain(editor->sampleGain);
+    // NOTE: We no longer update global engine parameters here because we use per-slot parameters
+    // The encoder callbacks update the current slot's parameters directly via setSlotRepitch/etc.
+    // This prevents parameters from one slot from affecting voices playing from other slots
+    // This method is kept for backward compatibility but does nothing now
 }
 
 void EditorUpdateMethods::updateWaveformVisualization() {
@@ -219,7 +240,7 @@ void EditorUpdateMethods::updateParameterDisplayLabels() {
         editor->paramDisplay1.setLabel("CUTOFF");
         editor->paramDisplay2.setLabel("RES.");
         editor->paramDisplay3.setLabel("DRIVE");
-        editor->paramDisplay4.setLabel("");  // No function in shift mode (speed removed)
+        editor->paramDisplay4.setLabel("PLAYBACK");  // Playback mode (Stacked/Round Robin)
         editor->paramDisplay5.setLabel("L.START");
         editor->paramDisplay6.setLabel("L.END");
         editor->paramDisplay7.setLabel("LOOP");
@@ -282,9 +303,11 @@ void EditorUpdateMethods::updateShiftModeDisplayValues() {
         editor->paramDisplay3.setValue(driveValue);
         editor->paramDisplay3.setValueText(juce::String(editor->lpDriveDb, 1) + "dB");
         
-        // Encoder 4: No function in shift mode (speed knob removed)
-        editor->paramDisplay4.setValue(0.0f);
-        editor->paramDisplay4.setValueText("");
+        // Encoder 4: Playback mode (0 = Stacked, 1 = Round Robin, default 0 = 0.0)
+        float playbackValue = editor->playbackMode == 0 ? 0.0f : 1.0f;
+        editor->encoder4.setValue(playbackValue);
+        editor->paramDisplay4.setValue(playbackValue);
+        editor->paramDisplay4.setValueText(editor->playbackMode == 0 ? "Stacked" : "Round Robin");
         
         // Encoder 5: Loop Start (already handled by waveform)
         // Encoder 6: Loop End (already handled by waveform)

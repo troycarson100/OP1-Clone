@@ -2,6 +2,7 @@
 #include "PluginEditor.h"
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <juce_core/juce_core.h>
+#include <juce_audio_formats/juce_audio_formats.h>
 
 EditorEventHandlers::EditorEventHandlers(Op1CloneAudioProcessorEditor* editor)
     : editor(editor)
@@ -123,15 +124,43 @@ void EditorEventHandlers::handleLoadSampleButtonClicked() {
         auto selectedFile = fc.getResult();
         
         if (selectedFile.existsAsFile() && ed != nullptr) {
-            if (ed->audioProcessor.loadSampleFromFile(selectedFile)) {
-                // Update UI
-                ed->currentSampleName = selectedFile.getFileName();
-                ed->sampleNameLabel.setText(ed->currentSampleName, juce::dontSendNotification);
-                
-                // Update waveform visualization
-                ed->updateWaveform();
-                
-                ed->repaint();
+            // Load the sample file directly to the current slot (don't use loadSampleFromFile which sets default)
+            juce::AudioFormatManager formatManager;
+            formatManager.registerBasicFormats();
+            std::unique_ptr<juce::AudioFormatReader> reader(formatManager.createReaderFor(selectedFile));
+            if (reader != nullptr) {
+                juce::AudioBuffer<float> sampleBuffer(static_cast<int>(reader->numChannels), 
+                                                      static_cast<int>(reader->lengthInSamples));
+                if (reader->read(&sampleBuffer, 0, static_cast<int>(reader->lengthInSamples), 0, true, true)) {
+                    // Save to current slot only - this preserves all other slots
+                    int slotIndex = ed->currentSlotIndex;  // Capture current slot index
+                    ed->audioProcessor.setSampleForSlot(slotIndex, sampleBuffer, reader->sampleRate);
+                    
+                    // For slot 0, also update the engine's default sample for backward compatibility
+                    // This ensures the default sample matches slot 0, but doesn't affect other slots
+                    // NOTE: We do NOT call loadSampleFromFile() here because it would update slot 0
+                    // even when loading to other slots. Instead, we only update slot 0's data above.
+                    // The engine's default sample is only used as a fallback when no slots are loaded.
+                    
+                    // Update UI
+                    ed->currentSampleName = selectedFile.getFileName();
+                    
+                    // Update sample name label with current slot letter (A-E)
+                    char slotLetter = static_cast<char>('A' + slotIndex);
+                    ed->sampleNameLabel.setText(juce::String::charToString(slotLetter) + ": " + ed->currentSampleName, juce::dontSendNotification);
+                    
+                    // Save sample name to current slot
+                    ed->saveCurrentStateToSlot(slotIndex);
+                    
+                    // Update waveform visualization with current slot's sample
+                    // This will also update the slot preview for the current slot
+                    // Use the captured slotIndex to ensure we update the correct slot
+                    ed->updateWaveform(slotIndex);
+                    
+                    ed->repaint();
+                } else {
+                    // Error reading file
+                }
             } else {
                 // Error loading - could show a message box or just continue
                 ed->repaint();

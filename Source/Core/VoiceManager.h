@@ -37,6 +37,12 @@ public:
     // Handle note on with sample data and start delay offset
     bool noteOn(int note, float velocity, SampleDataPtr sampleData, bool& wasStolen, int startDelayOffset);
     
+    // Handle note on with sample data, start delay offset, and slot-specific parameters
+    // Sets parameters on the allocated voice before triggering noteOn
+    bool noteOn(int note, float velocity, SampleDataPtr sampleData, bool& wasStolen, int startDelayOffset,
+                float repitchSemitones, int startPoint, int endPoint, float sampleGain,
+                float attackMs, float decayMs, float sustain, float releaseMs);
+    
     // Handle note off - releases voice playing this note
     void noteOff(int note);
     

@@ -22,37 +22,8 @@ void EncoderSetupManager::setupEncoders() {
 void EncoderSetupManager::setupEncoder1() {
     Op1CloneAudioProcessorEditor* ed = editor;  // Capture editor pointer, not 'this'
     ed->encoder1.onValueChanged = [ed](float value) {
-        // Check if instrument menu is open - if so, handle navigation
-        if (ed->instrumentMenuOpen) {
-            // Calculate direction of change
-            float delta = value - ed->lastEncoder1ValueForMenu;
-            
-            // Normalize delta to determine direction (handle wrap-around)
-            if (delta > 0.5f) delta -= 1.0f;  // Wrapped from high to low
-            if (delta < -0.5f) delta += 1.0f;  // Wrapped from low to high
-            
-            // Only respond to significant changes
-            if (std::abs(delta) > 0.01f) {
-                int currentIndex = ed->screenComponent.getInstrumentMenuSelectedIndex();
-                int numInstruments = 2;  // Sampler, JNO
-                
-                if (delta > 0) {
-                    // Scrolled up - move selection down
-                    currentIndex = (currentIndex + 1) % numInstruments;
-                } else {
-                    // Scrolled down - move selection up
-                    currentIndex = (currentIndex - 1 + numInstruments) % numInstruments;
-                }
-                
-                ed->screenComponent.setInstrumentMenuSelectedIndex(currentIndex);
-                ed->repaint();
-            }
-            
-            ed->lastEncoder1ValueForMenu = value;
-            return;  // Don't process normal encoder behavior when menu is open
-        }
-        
-        ed->lastEncoder1ValueForMenu = value;
+        // Menu navigation is now handled by the menu encoder on the screen component
+        // Encoder 1 is now only for normal operation (pitch/filter cutoff)
         
         if (ed->shiftToggleButton.getToggleState()) {
             // Shift mode: Encoder 1 = LP Filter Cutoff (20-20000 Hz)
@@ -72,7 +43,8 @@ void EncoderSetupManager::setupEncoder1() {
         } else {
             // Encoder 1: Repitch (-24 to +24 semitones)
             ed->repitchSemitones = (value - 0.5f) * 48.0f; // Map 0-1 to -24 to +24
-            ed->updateSampleEditing();
+            // Update current slot's parameter in adapter (this only affects new notes, not existing voices)
+            ed->audioProcessor.setSlotRepitch(ed->currentSlotIndex, ed->repitchSemitones);
             // Update parameter display 1 (Pitch) - normalize from -24/+24 to 0-1
             float normalizedPitch = (ed->repitchSemitones + 24.0f) / 48.0f;
             ed->paramDisplay1.setValue(normalizedPitch);
@@ -81,6 +53,9 @@ void EncoderSetupManager::setupEncoder1() {
             juce::String pitchText = (semitones >= 0 ? "+" : "") + juce::String(semitones);
             ed->paramDisplay1.setValueText(pitchText);
         }
+        
+        // Auto-save to current slot when parameter changes
+        ed->saveCurrentStateToSlot(ed->currentSlotIndex);
     };
     ed->encoder1.onButtonPressed = [ed]() {
         // Check if instrument menu is open - if so, select instrument
@@ -124,7 +99,8 @@ void EncoderSetupManager::setupEncoder2() {
                 if (ed->startPoint >= ed->endPoint) {
                     ed->startPoint = std::max(0, ed->endPoint - 1);
                 }
-                ed->updateSampleEditing();
+                // Update current slot's parameter in adapter (this only affects new notes, not existing voices)
+                ed->audioProcessor.setSlotStartPoint(ed->currentSlotIndex, ed->startPoint);
                 ed->updateWaveformVisualization();
                 // Force repaint
                 ed->screenComponent.repaint();
@@ -139,6 +115,9 @@ void EncoderSetupManager::setupEncoder2() {
                 }
             }
         }
+        
+        // Auto-save to current slot when parameter changes
+        ed->saveCurrentStateToSlot(ed->currentSlotIndex);
     };
     ed->encoder2.onButtonPressed = [ed]() {
         // Encoder 2 button pressed - reset to default
@@ -173,7 +152,8 @@ void EncoderSetupManager::setupEncoder3() {
                 if (ed->endPoint <= ed->startPoint) {
                     ed->endPoint = std::min(ed->sampleLength, ed->startPoint + 1);
                 }
-                ed->updateSampleEditing();
+                // Update current slot's parameter in adapter (this only affects new notes, not existing voices)
+                ed->audioProcessor.setSlotEndPoint(ed->currentSlotIndex, ed->endPoint);
                 ed->updateWaveformVisualization();
                 // Force repaint
                 ed->screenComponent.repaint();
@@ -188,6 +168,9 @@ void EncoderSetupManager::setupEncoder3() {
                 }
             }
         }
+        
+        // Auto-save to current slot when parameter changes
+        ed->saveCurrentStateToSlot(ed->currentSlotIndex);
     };
     ed->encoder3.onButtonPressed = [ed]() {
         // Encoder 3 button pressed - reset to default
@@ -209,18 +192,26 @@ void EncoderSetupManager::setupEncoder4() {
     Op1CloneAudioProcessorEditor* ed = editor;
     ed->encoder4.onValueChanged = [ed](float value) {
         if (ed->shiftToggleButton.getToggleState()) {
-            // Shift mode: Encoder 4 - no function (speed knob removed)
-            // Do nothing in shift mode
+            // Shift mode: Encoder 4 = Playback mode (Stacked/Round Robin)
+            ed->playbackMode = value >= 0.5f ? 1 : 0;  // 0 = Stacked, 1 = Round Robin
+            ed->audioProcessor.setPlaybackMode(ed->playbackMode);
+            // Update parameter display
+            ed->paramDisplay4.setValue(value);
+            ed->paramDisplay4.setValueText(ed->playbackMode == 0 ? "Stacked" : "Round Robin");
         } else {
             // Encoder 4: Sample gain (0.0 to 2.0)
             ed->sampleGain = value * 2.0f;
-            ed->updateSampleEditing();
+            // Update current slot's parameter in adapter (this only affects new notes, not existing voices)
+            ed->audioProcessor.setSlotSampleGain(ed->currentSlotIndex, ed->sampleGain);
             ed->updateWaveformVisualization();
             // Update parameter display 4 (Gain) - normalize from 0-2.0 to 0-1
             ed->paramDisplay4.setValue(value);
             // Format value: show as multiplier (e.g., "1.5x")
             ed->paramDisplay4.setValueText(juce::String(ed->sampleGain, 2) + "x");
         }
+        
+        // Auto-save to current slot when parameter changes
+        ed->saveCurrentStateToSlot(ed->currentSlotIndex);
     };
     ed->encoder4.onButtonPressed = [ed]() {
         // Encoder 4 button pressed - reset to default
@@ -260,7 +251,10 @@ void EncoderSetupManager::setupEncoder5() {
         } else {
             // Encoder 5: Attack (0-10000ms = 0-10 seconds)
             ed->adsrAttackMs = value * 10000.0f;
-            ed->updateADSR();
+            // Update current slot's ADSR parameters in adapter (this only affects new notes, not existing voices)
+            ed->audioProcessor.setSlotADSR(ed->currentSlotIndex, ed->adsrAttackMs, ed->adsrDecayMs, ed->adsrSustain, ed->adsrReleaseMs);
+            // Update visualization only (not engine parameters - those are per-slot now)
+            ed->adsrPillComponent.setADSR(ed->adsrAttackMs, ed->adsrDecayMs, ed->adsrSustain, ed->adsrReleaseMs);
             // Update parameter display 5 (Attack)
             ed->paramDisplay5.setValue(value);
             // Format value: show in ms, or seconds if >= 1000ms
@@ -297,6 +291,9 @@ void EncoderSetupManager::setupEncoder5() {
             // Don't reset fade-out timer here - let it continue if already fading
             // The fade-out will be properly set on drag end
         }
+        
+        // Auto-save to current slot when parameter changes
+        ed->saveCurrentStateToSlot(ed->currentSlotIndex);
     };
     ed->encoder5.onDragStart = [ed]() {
         if (!ed->shiftToggleButton.getToggleState()) {
@@ -367,7 +364,10 @@ void EncoderSetupManager::setupEncoder6() {
         } else {
             // Encoder 6: Decay (0-20000ms = 0-20 seconds)
             ed->adsrDecayMs = value * 20000.0f;
-            ed->updateADSR();
+            // Update current slot's ADSR parameters in adapter (this only affects new notes, not existing voices)
+            ed->audioProcessor.setSlotADSR(ed->currentSlotIndex, ed->adsrAttackMs, ed->adsrDecayMs, ed->adsrSustain, ed->adsrReleaseMs);
+            // Update visualization only (not engine parameters - those are per-slot now)
+            ed->adsrPillComponent.setADSR(ed->adsrAttackMs, ed->adsrDecayMs, ed->adsrSustain, ed->adsrReleaseMs);
             // Update parameter display 6 (Decay)
             ed->paramDisplay6.setValue(value);
             // Format value: show in ms, or seconds if >= 1000ms
@@ -404,6 +404,9 @@ void EncoderSetupManager::setupEncoder6() {
             // Don't reset fade-out timer here - let it continue if already fading
             // The fade-out will be properly set on drag end
         }
+        
+        // Auto-save to current slot when parameter changes
+        ed->saveCurrentStateToSlot(ed->currentSlotIndex);
     };
     ed->encoder6.onDragStart = [ed]() {
         if (!ed->shiftToggleButton.getToggleState()) {
@@ -467,7 +470,10 @@ void EncoderSetupManager::setupEncoder7() {
         } else {
             // Encoder 7: Sustain (0.0-1.0)
             ed->adsrSustain = value;
-            ed->updateADSR();
+            // Update current slot's ADSR parameters in adapter (this only affects new notes, not existing voices)
+            ed->audioProcessor.setSlotADSR(ed->currentSlotIndex, ed->adsrAttackMs, ed->adsrDecayMs, ed->adsrSustain, ed->adsrReleaseMs);
+            // Update visualization only (not engine parameters - those are per-slot now)
+            ed->adsrPillComponent.setADSR(ed->adsrAttackMs, ed->adsrDecayMs, ed->adsrSustain, ed->adsrReleaseMs);
             // Update parameter display 7 (Sustain)
             ed->paramDisplay7.setValue(value);
             // Format value: show as percentage
@@ -501,6 +507,9 @@ void EncoderSetupManager::setupEncoder7() {
             // Don't reset fade-out timer here - let it continue if already fading
             // The fade-out will be properly set on drag end
         }
+        
+        // Auto-save to current slot when parameter changes
+        ed->saveCurrentStateToSlot(ed->currentSlotIndex);
     };
     ed->encoder7.onDragStart = [ed]() {
         if (!ed->shiftToggleButton.getToggleState()) {
@@ -563,7 +572,10 @@ void EncoderSetupManager::setupEncoder8() {
         } else {
             // Encoder 8: Release (0-20000ms = 0-20 seconds)
             ed->adsrReleaseMs = value * 20000.0f;
-            ed->updateADSR();
+            // Update current slot's ADSR parameters in adapter (this only affects new notes, not existing voices)
+            ed->audioProcessor.setSlotADSR(ed->currentSlotIndex, ed->adsrAttackMs, ed->adsrDecayMs, ed->adsrSustain, ed->adsrReleaseMs);
+            // Update visualization only (not engine parameters - those are per-slot now)
+            ed->adsrPillComponent.setADSR(ed->adsrAttackMs, ed->adsrDecayMs, ed->adsrSustain, ed->adsrReleaseMs);
             // Update parameter display 8 (Release)
             ed->paramDisplay8.setValue(value);
             // Format value: show in ms, or seconds if >= 1000ms
@@ -576,6 +588,9 @@ void EncoderSetupManager::setupEncoder8() {
             // Pill component is always visible, so we just update it
             ed->updateADSR();  // Update pill visualization
         }
+        
+        // Auto-save to current slot when parameter changes
+        ed->saveCurrentStateToSlot(ed->currentSlotIndex);
     };
     ed->encoder8.onDragStart = [ed]() {
         if (!ed->shiftToggleButton.getToggleState()) {

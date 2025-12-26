@@ -4,6 +4,7 @@
 #include "../Core/SamplerEngine.h"
 #include "../Core/MidiEvent.h"
 #include <vector>
+#include <array>
 
 // Thin adapter layer between JUCE and portable Core engine
 // Converts JUCE types to Core types
@@ -51,8 +52,14 @@ public:
     // Get stereo sample data for visualization (thread-safe copy)
     void getStereoSampleDataForVisualization(std::vector<float>& outLeft, std::vector<float>& outRight) const;
     
+    // Get stereo sample data for a specific slot (thread-safe copy)
+    void getSlotStereoSampleDataForVisualization(int slotIndex, std::vector<float>& outLeft, std::vector<float>& outRight) const;
+    
     // Get source sample rate (for time calculations)
     double getSourceSampleRate() const;
+    
+    // Get source sample rate for a specific slot (for time calculations)
+    double getSlotSourceSampleRate(int slotIndex) const;
     
     // Get debug info (called from audio thread, safe to read from UI thread)
     void getDebugInfo(int& actualInN, int& outN, int& primeRemaining, int& nonZeroCount) const;
@@ -95,6 +102,25 @@ public:
     // Enable/disable filter and effects processing
     void setFilterEffectsEnabled(bool enabled);
     
+    // Set sample for a specific slot (0-4 for A-E)
+    void setSampleForSlot(int slotIndex, juce::AudioBuffer<float>& buffer, double sourceSampleRate);
+    
+    // Set playback mode (0 = Stacked, 1 = Round Robin)
+    void setPlaybackMode(int mode);
+    
+    // Set parameters for a specific slot (0-4 for A-E)
+    void setSlotRepitch(int slotIndex, float semitones);
+    void setSlotStartPoint(int slotIndex, int sampleIndex);
+    void setSlotEndPoint(int slotIndex, int sampleIndex);
+    void setSlotSampleGain(int slotIndex, float gain);
+    void setSlotADSR(int slotIndex, float attackMs, float decayMs, float sustain, float releaseMs);
+    
+    // Get parameters for a specific slot (0-4 for A-E)
+    float getSlotRepitch(int slotIndex) const;
+    int getSlotStartPoint(int slotIndex) const;
+    int getSlotEndPoint(int slotIndex) const;
+    float getSlotSampleGain(int slotIndex) const;
+    
 private:
     Core::SamplerEngine engine;
     
@@ -102,12 +128,51 @@ private:
     std::vector<float*> channelPointers;
     std::vector<Core::MidiEvent> midiEventBuffer;
     
-    // Sample data storage (owned by adapter)
+    // Sample data storage (owned by adapter) - per slot
+    struct SlotSampleData {
+        std::vector<float> leftChannel;
+        std::vector<float> rightChannel;
+        double sourceSampleRate;
+        bool hasSample;
+        
+        SlotSampleData() : sourceSampleRate(44100.0), hasSample(false) {}
+    };
+    std::array<SlotSampleData, 5> slotSamples;  // 5 slots A-E
+    
+    // Parameter storage per slot
+    struct SlotParameters {
+        float repitchSemitones;
+        int startPoint;
+        int endPoint;
+        float sampleGain;
+        float attackMs;
+        float decayMs;
+        float sustain;
+        float releaseMs;
+        
+        SlotParameters()
+            : repitchSemitones(0.0f)
+            , startPoint(0)
+            , endPoint(0)
+            , sampleGain(1.0f)
+            , attackMs(800.0f)
+            , decayMs(0.0f)
+            , sustain(1.0f)
+            , releaseMs(1000.0f)
+        {}
+    };
+    std::array<SlotParameters, 5> slotParameters;  // 5 slots A-E
+    
+    // Legacy sample data storage (for backward compatibility)
     std::vector<float> sampleData;        // Left channel (or mono)
     std::vector<float> rightChannelData;   // Right channel (empty if mono)
     
     // Source sample rate (stored when sample is loaded)
     double sourceSampleRate;
+    
+    // Playback mode (0 = Stacked, 1 = Round Robin)
+    int playbackMode;
+    int roundRobinIndex;  // Current index for round robin cycling
     
     // Helper: convert JUCE MIDI buffer to Core MidiEvent array
     void convertMidiBuffer(juce::MidiBuffer& midiMessages, int numSamples);

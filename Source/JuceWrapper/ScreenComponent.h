@@ -4,6 +4,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "WaveformComponent.h"
 #include "InstrumentMenuComponent.h"
+#include "SampleSlotComponent.h"
 
 // Main screen component for OP-1 Clone
 // Contains all visuals and menus for the synth
@@ -37,6 +38,14 @@ public:
     // Get waveform component bounds (for ADSR overlay positioning)
     juce::Rectangle<int> getWaveformBounds() const { return waveformComponent.getBounds(); }
     
+    // Set sample preview for slot A
+    void setSlotAPreview(const std::vector<float>& sampleData);  // DEPRECATED
+    void setSlotPreview(int slotIndex, const std::vector<float>& sampleData);
+    
+    // Slot selection control
+    void setSelectedSlot(int slotIndex);  // 0-4 for A-E
+    int getSelectedSlot() const { return selectedSlot; }
+    
     // Instrument menu control
     void showInstrumentMenu(bool show);
     bool isInstrumentMenuVisible() const { return instrumentMenu.isVisible(); }  // Uses Component::isVisible()
@@ -48,6 +57,9 @@ public:
 private:
     WaveformComponent waveformComponent;
     InstrumentMenuComponent instrumentMenu;
+    SampleSlotComponent sampleSlotComponent;
+    
+    int selectedSlot;  // Currently selected slot (0-4 for A-E)
     
     // Screen background and styling
     juce::Colour backgroundColor;

@@ -151,6 +151,72 @@ bool VoiceManager::noteOn(int note, float velocity, SampleDataPtr sampleData, bo
     return true;
 }
 
+bool VoiceManager::noteOn(int note, float velocity, SampleDataPtr sampleData, bool& wasStolen, int startDelayOffset,
+                          float repitchSemitones, int startPoint, int endPoint, float sampleGain,
+                          float attackMs, float decayMs, float sustain, float releaseMs) {
+    // In mono mode, turn off all currently playing voices
+    if (!isPolyphonicMode) {
+        for (auto& voice : voices) {
+            if (voice.isPlaying()) {
+                voice.noteOff(voice.getCurrentNote());
+            }
+        }
+    }
+    
+    // CRITICAL: Check if there's already a voice that was playing this exact note
+    // If so, retrigger that voice (restart from beginning) instead of allocating a new one
+    // This provides true retrigger behavior for rapid key presses
+    // Check both active voices and voices in release phase (recently played this note)
+    for (int i = 0; i < MAX_VOICES; ++i) {
+        if (voices[i].getCurrentNote() == note) {
+            // Found a voice that was playing this note (active or in release) - retrigger it
+            // Apply slot parameters to this voice
+            voices[i].setRepitch(repitchSemitones);
+            voices[i].setStartPoint(startPoint);
+            voices[i].setEndPoint(endPoint);
+            voices[i].setSampleGain(sampleGain);
+            voices[i].setAttackTime(attackMs);
+            voices[i].setDecayTime(decayMs);
+            voices[i].setSustainLevel(sustain);
+            voices[i].setReleaseTime(releaseMs);
+            voices[i].setSampleData(sampleData);
+            voices[i].noteOn(note, velocity, startDelayOffset);
+            wasStolen = false; // Not stolen, just retriggered
+            return true;
+        }
+    }
+    
+    // No voice playing this note - allocate a new voice
+    int voiceIndex = allocateVoice();
+    wasStolen = voices[voiceIndex].isActive() || voices[voiceIndex].isPlaying();
+    
+    // Increment voice start counter for this block
+    voicesStartedThisBlock++;
+    
+    // Set sample data snapshot before triggering note
+    if (!sampleData || sampleData->length <= 0 || 
+        sampleData->mono.empty() || sampleData->mono.data() == nullptr) {
+        return false; // Don't trigger note if no valid sample
+    }
+    
+    voices[voiceIndex].setSampleData(sampleData);
+    
+    // Apply slot-specific parameters to this voice BEFORE noteOn
+    voices[voiceIndex].setRepitch(repitchSemitones);
+    voices[voiceIndex].setStartPoint(startPoint);
+    voices[voiceIndex].setEndPoint(endPoint);
+    voices[voiceIndex].setSampleGain(sampleGain);
+    voices[voiceIndex].setAttackTime(attackMs);
+    voices[voiceIndex].setDecayTime(decayMs);
+    voices[voiceIndex].setSustainLevel(sustain);
+    voices[voiceIndex].setReleaseTime(releaseMs);
+    
+    // Calculate start delay: stagger voices within the block
+    int calculatedDelay = (voicesStartedThisBlock * 8) % 64;
+    voices[voiceIndex].noteOn(note, velocity, calculatedDelay + startDelayOffset);
+    return true;
+}
+
 void VoiceManager::noteOff(int note) {
     // Find voice playing this note and turn it off
     // Use isPlaying() to include voices in release phase

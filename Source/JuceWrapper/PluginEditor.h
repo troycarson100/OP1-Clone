@@ -10,7 +10,9 @@
 // #include "ADSRVisualizationComponent.h"  // COMMENTED OUT - replaced with ADSRPillComponent
 #include "ADSRPillComponent.h"
 #include "PianoIconButton.h"
+#include "../Core/SlotSnapshot.h"
 #include <array>
+#include <vector>
 
 // Simple JUCE editor with gain slider
 class Op1CloneAudioProcessorEditor : public juce::AudioProcessorEditor, 
@@ -117,6 +119,7 @@ private:
     MidiStatusComponent midiStatusComponent;
     
     // Hardware-style encoders
+    EncoderComponent menuEncoder;  // Menu/slot selection encoder (outside screen component)
     EncoderComponent encoder1;
     EncoderComponent encoder2;
     EncoderComponent encoder3;
@@ -154,6 +157,7 @@ private:
     
     // Update waveform visualization
     void updateWaveform();
+    void updateWaveform(int slotIndex);  // Update waveform for a specific slot
     
     juce::String currentSampleName;
     
@@ -182,6 +186,8 @@ private:
     float lpEnvAmount;     // Envelope amount (-1.0 to 1.0, positive/negative) - DEPRECATED, kept for future use
     float lpDriveDb;       // Drive amount in dB (0.0-24.0 dB)
     bool isPolyphonic;      // Playback mode (true = poly, false = mono)
+    int playbackMode;       // Sample playback mode (0 = Stacked, 1 = Round Robin)
+    int roundRobinIndex;    // Current index for round robin cycling
     int loopStartPoint;    // Loop start point (sample index)
     int loopEndPoint;      // Loop end point (sample index)
     bool loopEnabled;      // Loop on/off
@@ -200,7 +206,11 @@ private:
     
     // Instrument menu state
     bool instrumentMenuOpen;  // True when instrument menu is visible
-    float lastEncoder1ValueForMenu;  // Track encoder value for menu navigation
+    float lastMenuEncoderValue;  // Track menu encoder value for navigation
+    
+    // Sample slot snapshots (A-E)
+    std::vector<Core::SlotSnapshot> slotSnapshots;  // 5 slots
+    int currentSlotIndex;  // Currently active slot (0-4 for A-E)
     
     // Track if waveform has been initialized (to avoid calling updateWaveform() multiple times)
     bool waveformInitialized;
@@ -211,6 +221,12 @@ private:
     
     // Update parameter display text
     void updateParameterDisplay(const juce::String& paramName, float valueMs);
+    
+    // Slot snapshot management
+    void saveCurrentStateToSlot(int slotIndex);
+    void loadStateFromSlot(int slotIndex);
+    void setupMenuEncoder();  // Setup menu/slot selection encoder
+    void syncEncodersWithCurrentValues();  // Sync encoder positions with current parameter values
     
     // Update sample editing parameters and send to processor
     void updateSampleEditing();

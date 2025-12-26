@@ -14,3 +14,4 @@ private:
     void drawKeyboardIcon(juce::Graphics& g, const juce::Rectangle<float>& bounds);
 };
 
+

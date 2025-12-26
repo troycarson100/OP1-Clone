@@ -2,9 +2,12 @@
 #include <algorithm>
 #include <fstream>
 #include <chrono>
+#include <array>
 
 JuceEngineAdapter::JuceEngineAdapter()
     : sourceSampleRate(44100.0)
+    , playbackMode(0)  // Default to Stacked
+    , roundRobinIndex(0)
 {
 }
 
@@ -89,10 +92,8 @@ void JuceEngineAdapter::setSample(juce::AudioBuffer<float>& buffer, double sourc
     newSampleData->length = numSamples;
     newSampleData->sourceSampleRate = sourceSampleRate;
     
-    // Validate before passing - ensure SampleData is fully constructed and valid
-    if (newSampleData->mono.empty() || newSampleData->length <= 0 || 
-        newSampleData->mono.data() == nullptr || 
-        newSampleData->length != static_cast<int>(newSampleData->mono.size())) {
+    // Validate sample data before setting
+    if (newSampleData->mono.empty() || newSampleData->length <= 0) {
         // #region agent log
         {
             std::ofstream log("/Users/troycarson/Documents/JUCE Projects/OP1-Clone/.cursor/debug.log", std::ios::app);
@@ -149,6 +150,103 @@ void JuceEngineAdapter::setSample(juce::AudioBuffer<float>& buffer, double sourc
     // #endregion
 }
 
+void JuceEngineAdapter::setSampleForSlot(int slotIndex, juce::AudioBuffer<float>& buffer, double sourceSampleRate) {
+    if (slotIndex < 0 || slotIndex >= 5) {
+        return; // Invalid slot index
+    }
+    
+    int numSamples = buffer.getNumSamples();
+    int numChannels = buffer.getNumChannels();
+    
+    // Extract sample data
+    slotSamples[slotIndex].leftChannel.resize(static_cast<size_t>(numSamples));
+    slotSamples[slotIndex].rightChannel.clear();
+    
+    if (numChannels > 0 && numSamples > 0) {
+        const float* leftChannelData = buffer.getReadPointer(0);
+        if (leftChannelData != nullptr) {
+            std::copy(leftChannelData, leftChannelData + numSamples, slotSamples[slotIndex].leftChannel.begin());
+        }
+        
+        if (numChannels >= 2) {
+            slotSamples[slotIndex].rightChannel.resize(static_cast<size_t>(numSamples));
+            const float* rightChannelData = buffer.getReadPointer(1);
+            if (rightChannelData != nullptr) {
+                std::copy(rightChannelData, rightChannelData + numSamples, slotSamples[slotIndex].rightChannel.begin());
+            }
+        }
+    }
+    
+    slotSamples[slotIndex].sourceSampleRate = sourceSampleRate;
+    slotSamples[slotIndex].hasSample = !slotSamples[slotIndex].leftChannel.empty();
+}
+
+void JuceEngineAdapter::setSlotRepitch(int slotIndex, float semitones) {
+    if (slotIndex >= 0 && slotIndex < 5) {
+        slotParameters[slotIndex].repitchSemitones = semitones;
+    }
+}
+
+void JuceEngineAdapter::setSlotStartPoint(int slotIndex, int sampleIndex) {
+    if (slotIndex >= 0 && slotIndex < 5) {
+        slotParameters[slotIndex].startPoint = sampleIndex;
+    }
+}
+
+void JuceEngineAdapter::setSlotEndPoint(int slotIndex, int sampleIndex) {
+    if (slotIndex >= 0 && slotIndex < 5) {
+        slotParameters[slotIndex].endPoint = sampleIndex;
+    }
+}
+
+void JuceEngineAdapter::setSlotSampleGain(int slotIndex, float gain) {
+    if (slotIndex >= 0 && slotIndex < 5) {
+        slotParameters[slotIndex].sampleGain = gain;
+    }
+}
+
+void JuceEngineAdapter::setSlotADSR(int slotIndex, float attackMs, float decayMs, float sustain, float releaseMs) {
+    if (slotIndex >= 0 && slotIndex < 5) {
+        slotParameters[slotIndex].attackMs = attackMs;
+        slotParameters[slotIndex].decayMs = decayMs;
+        slotParameters[slotIndex].sustain = sustain;
+        slotParameters[slotIndex].releaseMs = releaseMs;
+    }
+}
+
+float JuceEngineAdapter::getSlotRepitch(int slotIndex) const {
+    if (slotIndex >= 0 && slotIndex < 5) {
+        return slotParameters[slotIndex].repitchSemitones;
+    }
+    return 0.0f;
+}
+
+int JuceEngineAdapter::getSlotStartPoint(int slotIndex) const {
+    if (slotIndex >= 0 && slotIndex < 5) {
+        return slotParameters[slotIndex].startPoint;
+    }
+    return 0;
+}
+
+int JuceEngineAdapter::getSlotEndPoint(int slotIndex) const {
+    if (slotIndex >= 0 && slotIndex < 5) {
+        return slotParameters[slotIndex].endPoint;
+    }
+    return 0;
+}
+
+float JuceEngineAdapter::getSlotSampleGain(int slotIndex) const {
+    if (slotIndex >= 0 && slotIndex < 5) {
+        return slotParameters[slotIndex].sampleGain;
+    }
+    return 1.0f;
+}
+
+void JuceEngineAdapter::setPlaybackMode(int mode) {
+    playbackMode = mode;
+    roundRobinIndex = 0; // Reset round robin index when mode changes
+}
+
 void JuceEngineAdapter::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages) {
     int numChannels = buffer.getNumChannels();
     int numSamples = buffer.getNumSamples();
@@ -159,11 +257,110 @@ void JuceEngineAdapter::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
         channelPointers[ch] = buffer.getWritePointer(ch);
     }
     
-    // Convert MIDI messages
+    // Convert MIDI messages and handle stacked/round robin playback
     convertMidiBuffer(midiMessages, numSamples);
     
-    // Process through core engine
-    engine.handleMidi(midiEventBuffer.data(), static_cast<int>(midiEventBuffer.size()));
+    // Process MIDI events with stacked/round robin support
+    // For stacked mode: trigger all loaded slots
+    // For round robin: cycle through loaded slots
+    std::vector<Core::MidiEvent> processedEvents;
+    
+    // Get list of loaded slots
+    std::vector<int> loadedSlots;
+    for (int i = 0; i < 5; ++i) {
+        if (slotSamples[i].hasSample && !slotSamples[i].leftChannel.empty()) {
+            loadedSlots.push_back(i);
+        }
+    }
+    
+    // If no slots loaded, fall back to default sample
+    if (loadedSlots.empty()) {
+        // Use default engine sample
+        engine.handleMidi(midiEventBuffer.data(), static_cast<int>(midiEventBuffer.size()));
+    } else if (playbackMode == 0) {
+        // Stacked mode: trigger all loaded slots (even if just one)
+        // Stacked mode with multiple slots: trigger all loaded slots
+        // Process each MIDI event
+        for (const auto& event : midiEventBuffer) {
+            if (event.type == Core::MidiEvent::NoteOn) {
+                // Process each slot separately so each gets its own sample
+                // Use different MIDI notes for each slot to ensure separate voices
+                int baseNote = event.note;
+                int slotOffset = 0;
+                for (int slotIndex : loadedSlots) {
+                    // Get this slot's parameters
+                    const SlotParameters& params = slotParameters[slotIndex];
+                    
+                    // Create SampleData for this slot
+                    auto slotSampleData = std::make_shared<Core::SampleData>();
+                    slotSampleData->mono = slotSamples[slotIndex].leftChannel;
+                    slotSampleData->right = slotSamples[slotIndex].rightChannel;
+                    slotSampleData->length = static_cast<int>(slotSamples[slotIndex].leftChannel.size());
+                    slotSampleData->sourceSampleRate = slotSamples[slotIndex].sourceSampleRate;
+                    
+                    // Trigger note on with this slot's sample data and parameters
+                    // Parameters are applied directly to the allocated voice, not globally
+                    // This allows each slot to have independent parameters
+                    // Use note + slotOffset to create unique notes (wrapped to stay in valid range)
+                    int uniqueNote = (baseNote + slotOffset) % 128;  // Wrap to valid MIDI range
+                    engine.triggerNoteOnWithSample(uniqueNote, event.velocity, slotSampleData,
+                                                   params.repitchSemitones, params.startPoint, params.endPoint, params.sampleGain,
+                                                   params.attackMs, params.decayMs, params.sustain, params.releaseMs);
+                    slotOffset++;
+                }
+            } else if (event.type == Core::MidiEvent::NoteOff) {
+                // NoteOff: send to all voices that might be playing this note (from any slot)
+                // Since we used different note numbers for each slot, we need to send NoteOff for all of them
+                int baseNote = event.note;
+                for (size_t i = 0; i < loadedSlots.size(); ++i) {
+                    Core::MidiEvent noteOffEvent = event;
+                    noteOffEvent.note = (baseNote + static_cast<int>(i)) % 128;
+                    processedEvents.push_back(noteOffEvent);
+                }
+            } else {
+                // Other events - process normally
+                processedEvents.push_back(event);
+            }
+        }
+        
+        // Process NoteOff and other events
+        if (!processedEvents.empty()) {
+            engine.handleMidi(processedEvents.data(), static_cast<int>(processedEvents.size()));
+        }
+    } else {
+        // Round robin mode: cycle through loaded slots
+        for (const auto& event : midiEventBuffer) {
+            if (event.type == Core::MidiEvent::NoteOn) {
+                // Round robin mode: cycle through loaded slots
+                int slotIndex = loadedSlots[roundRobinIndex % loadedSlots.size()];
+                roundRobinIndex = (roundRobinIndex + 1) % loadedSlots.size();
+                
+                // Get this slot's parameters
+                const SlotParameters& params = slotParameters[slotIndex];
+                
+                // Create SampleData for this slot
+                auto slotSampleData = std::make_shared<Core::SampleData>();
+                slotSampleData->mono = slotSamples[slotIndex].leftChannel;
+                slotSampleData->right = slotSamples[slotIndex].rightChannel;
+                slotSampleData->length = static_cast<int>(slotSamples[slotIndex].leftChannel.size());
+                slotSampleData->sourceSampleRate = slotSamples[slotIndex].sourceSampleRate;
+                
+                // Trigger note with this slot's sample data and parameters
+                engine.triggerNoteOnWithSample(event.note, event.velocity, slotSampleData,
+                                               params.repitchSemitones, params.startPoint, params.endPoint, params.sampleGain,
+                                               params.attackMs, params.decayMs, params.sustain, params.releaseMs);
+            } else {
+                // NoteOff or other events pass through unchanged
+                processedEvents.push_back(event);
+            }
+        }
+        
+        // Process NoteOff and other events
+        if (!processedEvents.empty()) {
+            engine.handleMidi(processedEvents.data(), static_cast<int>(processedEvents.size()));
+        }
+    }
+    
     engine.process(channelPointers.data(), numChannels, numSamples);
     
     // Clear MIDI event buffer for next block
@@ -226,8 +423,26 @@ void JuceEngineAdapter::getStereoSampleDataForVisualization(std::vector<float>& 
     outRight = rightChannelData;
 }
 
+void JuceEngineAdapter::getSlotStereoSampleDataForVisualization(int slotIndex, std::vector<float>& outLeft, std::vector<float>& outRight) const {
+    // Thread-safe: copy stereo sample data for a specific slot
+    if (slotIndex >= 0 && slotIndex < 5) {
+        outLeft = slotSamples[slotIndex].leftChannel;
+        outRight = slotSamples[slotIndex].rightChannel;
+    } else {
+        outLeft.clear();
+        outRight.clear();
+    }
+}
+
 double JuceEngineAdapter::getSourceSampleRate() const {
     return sourceSampleRate;
+}
+
+double JuceEngineAdapter::getSlotSourceSampleRate(int slotIndex) const {
+    if (slotIndex >= 0 && slotIndex < 5) {
+        return slotSamples[slotIndex].sourceSampleRate;
+    }
+    return 44100.0;  // Default fallback
 }
 
 void JuceEngineAdapter::getDebugInfo(int& actualInN, int& outN, int& primeRemaining, int& nonZeroCount) const {
@@ -246,24 +461,6 @@ void JuceEngineAdapter::getAllActivePlayheads(std::vector<double>& positions, st
     engine.getAllActivePlayheads(positions, envelopeValues);
 }
 
-void JuceEngineAdapter::convertMidiBuffer(juce::MidiBuffer& midiMessages, int numSamples) {
-    midiEventBuffer.clear();
-    
-    for (const auto metadata : midiMessages) {
-        juce::MidiMessage message = metadata.getMessage();
-        int sampleOffset = metadata.samplePosition;
-        
-        if (message.isNoteOn()) {
-            int note = message.getNoteNumber();
-            float velocity = message.getFloatVelocity();
-            midiEventBuffer.emplace_back(Core::MidiEvent::NoteOn, note, velocity, sampleOffset);
-        } else if (message.isNoteOff()) {
-            int note = message.getNoteNumber();
-            midiEventBuffer.emplace_back(Core::MidiEvent::NoteOff, note, 0.0f, sampleOffset);
-        }
-    }
-}
-
 void JuceEngineAdapter::setLPFilterCutoff(float cutoffHz) {
     engine.setLPFilterCutoff(cutoffHz);
 }
@@ -279,8 +476,6 @@ void JuceEngineAdapter::setLPFilterEnvAmount(float amount) {
 void JuceEngineAdapter::setLPFilterDrive(float driveDb) {
     engine.setLPFilterDrive(driveDb);
 }
-
-// Time warp speed removed - fixed at 1.0 (constant duration)
 
 void JuceEngineAdapter::setPlaybackMode(bool polyphonic) {
     engine.setPlaybackMode(polyphonic);
@@ -314,3 +509,28 @@ void JuceEngineAdapter::setLoopEnvRelease(float releaseMs) {
     engine.setLoopEnvRelease(releaseMs);
 }
 
+void JuceEngineAdapter::convertMidiBuffer(juce::MidiBuffer& midiMessages, int numSamples) {
+    midiEventBuffer.clear();
+    
+    for (const auto metadata : midiMessages) {
+        const juce::MidiMessage& message = metadata.getMessage();
+        
+        Core::MidiEvent event;
+        event.sampleOffset = metadata.samplePosition;
+        
+        if (message.isNoteOn()) {
+            event.type = Core::MidiEvent::NoteOn;
+            event.note = message.getNoteNumber();
+            event.velocity = message.getFloatVelocity();
+        } else if (message.isNoteOff()) {
+            event.type = Core::MidiEvent::NoteOff;
+            event.note = message.getNoteNumber();
+            event.velocity = 0.0f;
+        } else {
+            // Ignore other MIDI message types for now
+            continue;
+        }
+        
+        midiEventBuffer.push_back(event);
+    }
+}

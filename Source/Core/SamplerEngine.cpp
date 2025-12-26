@@ -109,6 +109,44 @@ bool SamplerEngine::pushMidiEvent(const MidiEvent& event) {
     return midiQueue.push(event);
 }
 
+bool SamplerEngine::triggerNoteOnWithSample(int note, float velocity, SampleDataPtr sampleData) {
+    // Trigger note on immediately with specific sample data (for stacked playback)
+    // This bypasses the queue and processes the note immediately
+    if (sampleData && sampleData->length > 0) {
+        bool wasStolen = false;
+        // Pass 0 as startDelayOffset - VoiceManager will calculate the delay based on voicesStartedThisBlock
+        bool started = voiceManager.noteOn(note, velocity, sampleData, wasStolen, 0);
+        if (started) {
+            voicesStartedThisBlock.store(voicesStartedThisBlock.load(std::memory_order_relaxed) + 1, std::memory_order_release);
+            if (wasStolen) {
+                voicesStolenThisBlock.store(voicesStolenThisBlock.load(std::memory_order_relaxed) + 1, std::memory_order_release);
+            }
+        }
+        return started;
+    }
+    return false;
+}
+
+bool SamplerEngine::triggerNoteOnWithSample(int note, float velocity, SampleDataPtr sampleData,
+                                            float repitchSemitones, int startPoint, int endPoint, float sampleGain,
+                                            float attackMs, float decayMs, float sustain, float releaseMs) {
+    // Trigger note on with slot-specific parameters (applied to the allocated voice, not globally)
+    if (sampleData && sampleData->length > 0) {
+        bool wasStolen = false;
+        bool started = voiceManager.noteOn(note, velocity, sampleData, wasStolen, 0,
+                                           repitchSemitones, startPoint, endPoint, sampleGain,
+                                           attackMs, decayMs, sustain, releaseMs);
+        if (started) {
+            voicesStartedThisBlock.store(voicesStartedThisBlock.load(std::memory_order_relaxed) + 1, std::memory_order_release);
+            if (wasStolen) {
+                voicesStolenThisBlock.store(voicesStolenThisBlock.load(std::memory_order_relaxed) + 1, std::memory_order_release);
+            }
+        }
+        return started;
+    }
+    return false;
+}
+
 void SamplerEngine::handleMidi(const MidiEvent* events, int count) {
     // DEPRECATED: Push events to queue instead of processing directly
     // This maintains backward compatibility but routes through queue

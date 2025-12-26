@@ -95,6 +95,8 @@ target_sources(Op1Clone PRIVATE
     Source/JuceWrapper/InstrumentMenuComponent.h
     Source/JuceWrapper/PianoIconButton.cpp
     Source/JuceWrapper/PianoIconButton.h
+    Source/JuceWrapper/SampleSlotComponent.cpp
+    Source/JuceWrapper/SampleSlotComponent.h
 )
 
 # Custom standalone main file (only for standalone target)

@@ -13,6 +13,7 @@
 
 Op1CloneAudioProcessorEditor::Op1CloneAudioProcessorEditor(Op1CloneAudioProcessor& p)
     : AudioProcessorEditor(&p), audioProcessor(p)
+    , menuEncoder("Menu")
     , encoder1("")
     , encoder2("")
     , encoder3("")
@@ -21,6 +22,9 @@ Op1CloneAudioProcessorEditor::Op1CloneAudioProcessorEditor(Op1CloneAudioProcesso
     , encoder6("")
     , encoder7("")
     , encoder8("") {
+    
+    // Setup menu encoder (outside screen component, on the left)
+    addAndMakeVisible(&menuEncoder);
     
     // Setup screen component
     addAndMakeVisible(&screenComponent);
@@ -93,6 +97,8 @@ Op1CloneAudioProcessorEditor::Op1CloneAudioProcessorEditor(Op1CloneAudioProcesso
     lpEnvAmount = 0.0f;  // DEPRECATED - kept for future use
     lpDriveDb = 0.0f;  // Default to 0 dB
     isPolyphonic = true;  // Default to Poly/Stereo
+    playbackMode = 0;  // Default to Stacked (0 = Stacked, 1 = Round Robin)
+    roundRobinIndex = 0;  // Start at first slot for round robin
     loopStartPoint = 0;
     loopEndPoint = 0;
     loopEnabled = false;  // Default to OFF
@@ -101,7 +107,28 @@ Op1CloneAudioProcessorEditor::Op1CloneAudioProcessorEditor(Op1CloneAudioProcesso
     
     // Initialize instrument menu state
     instrumentMenuOpen = false;
-    lastEncoder1ValueForMenu = 0.5f;  // Start at middle
+    lastMenuEncoderValue = 0.5f;  // Start at middle
+    
+    // Initialize slot snapshots (5 slots A-E)
+    slotSnapshots.resize(5);
+    currentSlotIndex = 0;  // Start with slot A
+    
+    // Save current state to slot A (this saves editor's current state to slot A's snapshot)
+    saveCurrentStateToSlot(0);
+    
+    // Initialize adapter's per-slot parameters from snapshots (each slot has its own snapshot with defaults)
+    // This ensures each slot has independent parameters from the start
+    for (int i = 0; i < 5; ++i) {
+        const Core::SlotSnapshot& snapshot = slotSnapshots[i];
+        audioProcessor.setSlotRepitch(i, snapshot.repitchSemitones);
+        audioProcessor.setSlotStartPoint(i, snapshot.startPoint);
+        audioProcessor.setSlotEndPoint(i, snapshot.endPoint);
+        audioProcessor.setSlotSampleGain(i, snapshot.sampleGain);
+        audioProcessor.setSlotADSR(i, snapshot.attackMs, snapshot.decayMs, snapshot.sustain, snapshot.releaseMs);
+    }
+    
+    // Setup menu encoder (on left side of screen component)
+    setupMenuEncoder();
     
     // Setup instrument menu callback
     screenComponent.setInstrumentMenuCallback([this](const juce::String& instrument) {
@@ -157,7 +184,7 @@ Op1CloneAudioProcessorEditor::Op1CloneAudioProcessorEditor(Op1CloneAudioProcesso
     addAndMakeVisible(&volumeLabel);
     
     // Setup sample name label (overlay on top of screen)
-    sampleNameLabel.setText("Default (440Hz tone)", juce::dontSendNotification);
+    sampleNameLabel.setText("A: Default (440Hz tone)", juce::dontSendNotification);
     sampleNameLabel.setJustificationType(juce::Justification::centredLeft);
     sampleNameLabel.setColour(juce::Label::textColourId, juce::Colours::white);
     addAndMakeVisible(&sampleNameLabel);
@@ -461,6 +488,12 @@ void Op1CloneAudioProcessorEditor::updateWaveform() {
     updateMethods.updateWaveform();
 }
 
+void Op1CloneAudioProcessorEditor::updateWaveform(int slotIndex) {
+    // Delegate to update methods manager with specific slot index
+    EditorUpdateMethods updateMethods(this);
+    updateMethods.updateWaveform(slotIndex);
+}
+
 void Op1CloneAudioProcessorEditor::buttonClicked(juce::Button* button) {
     // Delegate to event handlers manager (extracted to comply with 500-line rule)
     EditorEventHandlers eventHandlers(this);
@@ -538,5 +571,214 @@ void Op1CloneAudioProcessorEditor::updateShiftModeDisplayValues() {
     // Delegate to update methods manager (extracted to comply with 500-line rule)
     EditorUpdateMethods updateMethods(this);
     updateMethods.updateShiftModeDisplayValues();
+}
+
+void Op1CloneAudioProcessorEditor::setupMenuEncoder() {
+    // Setup menu encoder for instrument menu navigation and slot selection
+    menuEncoder.onValueChanged = [this](float value) {
+        // Check if instrument menu is open - if so, handle navigation
+        if (instrumentMenuOpen) {
+            // Calculate direction of change
+            float delta = value - lastMenuEncoderValue;
+            
+            // Normalize delta to determine direction (handle wrap-around)
+            if (delta > 0.5f) delta -= 1.0f;  // Wrapped from high to low
+            if (delta < -0.5f) delta += 1.0f;  // Wrapped from low to high
+            
+            // Only respond to significant changes
+            if (std::abs(delta) > 0.01f) {
+                int currentIndex = screenComponent.getInstrumentMenuSelectedIndex();
+                int numInstruments = 2;  // Sampler, JNO
+                
+                if (delta > 0) {
+                    // Scrolled up - move selection down
+                    currentIndex = (currentIndex + 1) % numInstruments;
+                } else {
+                    // Scrolled down - move selection up
+                    currentIndex = (currentIndex - 1 + numInstruments) % numInstruments;
+                }
+                
+                screenComponent.setInstrumentMenuSelectedIndex(currentIndex);
+                repaint();
+            }
+            
+            lastMenuEncoderValue = value;
+            return;  // Don't process slot selection when menu is open
+        }
+        
+        // Not in menu - handle slot selection (A-E)
+        // Use smoother mapping: map encoder value (0-1) directly to slot index (0-4)
+        // This provides continuous, smooth rotation through slots
+        float slotValue = value * 5.0f;  // Map 0-1 to 0-5
+        int newSlot = static_cast<int>(slotValue) % 5;
+        
+        // Only change slot if it's different from current
+        if (newSlot != currentSlotIndex) {
+            loadStateFromSlot(newSlot);
+        }
+        
+        lastMenuEncoderValue = value;
+    };
+    
+    menuEncoder.onButtonPressed = [this]() {
+        if (instrumentMenuOpen) {
+            // Select instrument when menu is open
+            screenComponent.selectInstrument();
+        }
+        // Button press doesn't do anything for slot selection (slots are selected by rotation)
+    };
+}
+
+void Op1CloneAudioProcessorEditor::saveCurrentStateToSlot(int slotIndex) {
+    if (slotIndex < 0 || slotIndex >= 5) return;
+    
+    Core::SlotSnapshot& snapshot = slotSnapshots[slotIndex];
+    snapshot.repitchSemitones = repitchSemitones;
+    snapshot.startPoint = startPoint;
+    snapshot.endPoint = endPoint;
+    snapshot.sampleGain = sampleGain;
+    snapshot.lpCutoffHz = lpCutoffHz;
+    snapshot.lpResonance = lpResonance;
+    snapshot.lpDriveDb = lpDriveDb;
+    snapshot.attackMs = adsrAttackMs;
+    snapshot.decayMs = adsrDecayMs;
+    snapshot.sustain = adsrSustain;
+    snapshot.releaseMs = adsrReleaseMs;
+    snapshot.loopStartPoint = loopStartPoint;
+    snapshot.loopEndPoint = loopEndPoint;
+    snapshot.loopEnabled = loopEnabled;
+    snapshot.isPolyphonic = isPolyphonic;
+    snapshot.playbackMode = playbackMode;
+    snapshot.sampleName = currentSampleName.toStdString();  // Save sample name
+}
+
+void Op1CloneAudioProcessorEditor::loadStateFromSlot(int slotIndex) {
+    if (slotIndex < 0 || slotIndex >= 5) return;
+    
+    // Save current state before switching (save editor's current state to the current slot's snapshot)
+    saveCurrentStateToSlot(currentSlotIndex);
+    
+    // Also sync adapter's per-slot parameters from editor's current state before switching
+    audioProcessor.setSlotRepitch(currentSlotIndex, repitchSemitones);
+    audioProcessor.setSlotStartPoint(currentSlotIndex, startPoint);
+    audioProcessor.setSlotEndPoint(currentSlotIndex, endPoint);
+    audioProcessor.setSlotSampleGain(currentSlotIndex, sampleGain);
+    audioProcessor.setSlotADSR(currentSlotIndex, adsrAttackMs, adsrDecayMs, adsrSustain, adsrReleaseMs);
+    
+    // Load new slot
+    currentSlotIndex = slotIndex;
+    const Core::SlotSnapshot& snapshot = slotSnapshots[slotIndex];
+    repitchSemitones = snapshot.repitchSemitones;
+    startPoint = snapshot.startPoint;
+    endPoint = snapshot.endPoint;
+    sampleGain = snapshot.sampleGain;
+    lpCutoffHz = snapshot.lpCutoffHz;
+    lpResonance = snapshot.lpResonance;
+    lpDriveDb = snapshot.lpDriveDb;
+    adsrAttackMs = snapshot.attackMs;
+    adsrDecayMs = snapshot.decayMs;
+    adsrSustain = snapshot.sustain;
+    adsrReleaseMs = snapshot.releaseMs;
+    loopStartPoint = snapshot.loopStartPoint;
+    loopEndPoint = snapshot.loopEndPoint;
+    loopEnabled = snapshot.loopEnabled;
+    isPolyphonic = snapshot.isPolyphonic;
+    playbackMode = snapshot.playbackMode;
+    currentSampleName = juce::String(snapshot.sampleName);  // Load sample name
+    
+    // Update sample name label with slot letter (A-E)
+    char slotLetter = 'A' + slotIndex;
+    sampleNameLabel.setText(juce::String::charToString(slotLetter) + ": " + currentSampleName, juce::dontSendNotification);
+    
+    // Sync adapter's per-slot parameters with loaded snapshot (ensure adapter has this slot's parameters)
+    audioProcessor.setSlotRepitch(slotIndex, repitchSemitones);
+    audioProcessor.setSlotStartPoint(slotIndex, startPoint);
+    audioProcessor.setSlotEndPoint(slotIndex, endPoint);
+    audioProcessor.setSlotSampleGain(slotIndex, sampleGain);
+    audioProcessor.setSlotADSR(slotIndex, adsrAttackMs, adsrDecayMs, adsrSustain, adsrReleaseMs);
+    
+    // Apply values to processor and UI
+    updateSampleEditing();
+    updateADSR();
+    updateShiftModeDisplayValues();
+    updateWaveformVisualization();
+    
+    // Update waveform and slot preview for the loaded slot
+    // This ensures the preview is refreshed when switching slots
+    updateWaveform(slotIndex);
+    
+    // Update parameter display labels to reflect loaded values
+    updateParameterDisplayLabels();
+    
+    // Sync encoder values with loaded parameters (so encoders show correct position)
+    syncEncodersWithCurrentValues();
+    
+    // Update screen component to show selected slot
+    screenComponent.setSelectedSlot(slotIndex);
+}
+
+void Op1CloneAudioProcessorEditor::syncEncodersWithCurrentValues() {
+    // Sync encoder positions with current parameter values
+    // This ensures encoders show the correct position when loading a slot
+    
+    if (shiftToggleButton.getToggleState()) {
+        // Shift mode: Map filter parameters to encoder positions
+        // Encoder 1: LP Filter Cutoff (20-20000 Hz, logarithmic)
+        float cutoffNormalized = std::log(lpCutoffHz / 20.0f) / std::log(1000.0f);
+        encoder1.setValue(cutoffNormalized);
+        
+        // Encoder 2: LP Filter Resonance (0.0-4.0)
+        encoder2.setValue(lpResonance / 4.0f);
+        
+        // Encoder 3: Drive (0.0-24.0 dB)
+        encoder3.setValue(lpDriveDb / 24.0f);
+        
+        // Encoder 4: No function in shift mode
+        
+        // Encoder 5: Loop Start Point
+        if (sampleLength > 0) {
+            encoder5.setValue(static_cast<float>(loopStartPoint) / static_cast<float>(sampleLength));
+        }
+        
+        // Encoder 6: Loop End Point
+        if (sampleLength > 0) {
+            encoder6.setValue(static_cast<float>(loopEndPoint) / static_cast<float>(sampleLength));
+        }
+        
+        // Encoder 7: Loop (on/off)
+        encoder7.setValue(loopEnabled ? 1.0f : 0.0f);
+        
+        // Encoder 8: Playback (Mono/Poly)
+        encoder8.setValue(isPolyphonic ? 1.0f : 0.0f);
+    } else {
+        // Normal mode: Map sample editing and ADSR parameters
+        // Encoder 1: Repitch (-24 to +24 semitones)
+        encoder1.setValue((repitchSemitones + 24.0f) / 48.0f);
+        
+        // Encoder 2: Start point
+        if (sampleLength > 0) {
+            encoder2.setValue(static_cast<float>(startPoint) / static_cast<float>(sampleLength));
+        }
+        
+        // Encoder 3: End point
+        if (sampleLength > 0) {
+            encoder3.setValue(static_cast<float>(endPoint) / static_cast<float>(sampleLength));
+        }
+        
+        // Encoder 4: Sample gain (0.0-2.0)
+        encoder4.setValue(sampleGain / 2.0f);
+        
+        // Encoder 5: Attack (0-10000ms)
+        encoder5.setValue(adsrAttackMs / 10000.0f);
+        
+        // Encoder 6: Decay (0-20000ms)
+        encoder6.setValue(adsrDecayMs / 20000.0f);
+        
+        // Encoder 7: Sustain (0.0-1.0)
+        encoder7.setValue(adsrSustain);
+        
+        // Encoder 8: Release (0-20000ms)
+        encoder8.setValue(adsrReleaseMs / 20000.0f);
+    }
 }
 
