@@ -166,7 +166,7 @@ void SamplerVoice::noteOn(int note, float velocity, int startDelayOffset) {
     
     active = (sampleData_ != nullptr && sampleData_->length > 0 && !sampleData_->mono.empty());
     
-    // Start ramp gain: 0 -> 1 over 64 samples (very short for rapid triggers)
+    // Start ramp gain: 0 -> 1 over 128 samples (longer for smoother rapid retriggers)
     // CRITICAL: If voice was being stolen, wait until fade-out completes
     if (active && currentSampleRate > 0.0) {
         // If voice was being stolen and still fading out, don't start new note yet
@@ -178,11 +178,13 @@ void SamplerVoice::noteOn(int note, float velocity, int startDelayOffset) {
             return; // Don't start new note yet
         }
         
-        // CRITICAL: microRamp MUST start at 0 and ramp to 1 over 128 samples
-        rampGain = 0.0f; // Always start from 0
+        // CRITICAL: For rapid retriggers, reset rampGain to 0 immediately but keep it smooth
+        // Don't ramp down - just reset and let it ramp up from 0
+        // The envelope resetting to 0 will also help prevent clicks
+        rampGain = 0.0f; // Always start from 0 for clean retrigger
         targetGain = 1.0f;
-        rampSamplesRemaining = 128; // microRamp duration (128 samples)
-        rampIncrement = 1.0f / 128.0f;
+        rampSamplesRemaining = 256; // Longer ramp duration (256 samples ~5.8ms at 44.1kHz) for smoother transitions
+        rampIncrement = 1.0f / 256.0f;
         isRamping = true;
         isBeingStolen = false;
         
@@ -190,6 +192,19 @@ void SamplerVoice::noteOn(int note, float velocity, int startDelayOffset) {
         lastVoiceSampleL = 0.0f;
         lastVoiceSampleR = 0.0f;
         maxVoiceDelta = 0.0f;
+        
+        // CRITICAL: For rapid retriggers, smoothly transition slew limiter state
+        // Instead of resetting to 0 (which causes a jump), gradually move toward 0
+        // This prevents crackling when rapidly retriggering
+        if (wasActive) {
+            // Voice was active - smoothly transition slew state toward 0 over a few samples
+            // This will happen naturally as rampGain and envelope ramp up from 0
+            // Just ensure we don't have a sudden jump
+        } else {
+            // Voice was not active - safe to reset completely
+            slewLastOutL = 0.0f;
+            slewLastOutR = 0.0f;
+        }
         
         // Reset warp processor if enabled
         if (warpEnabled && timeRatio != 1.0 && warpProcessor) {
@@ -225,8 +240,9 @@ void SamplerVoice::noteOn(int note, float velocity, int startDelayOffset) {
     float effectiveAttackMs = std::max(attackTimeMs, 2.0f);
     attackSamples = static_cast<int>(currentSampleRate * effectiveAttackMs / 1000.0);
     if (attackSamples < 1) attackSamples = 1;
-    // Ensure minimum of 128 samples for smooth attack (prevents pops even at 0ms setting)
-    attackSamples = std::max(attackSamples, 128);
+    // Ensure minimum of 256 samples for smooth attack (prevents pops even at 0ms setting)
+    // Longer attack helps prevent clicks on rapid retriggers
+    attackSamples = std::max(attackSamples, 256);
     
     decaySamples = static_cast<int>(currentSampleRate * decayTimeMs / 1000.0);
     if (decaySamples < 1) decaySamples = 1;
@@ -245,7 +261,7 @@ void SamplerVoice::noteOn(int note, float velocity, int startDelayOffset) {
     isFadingOut = false;
     
     // Calculate fade durations - longer for smoother transitions, especially on retrigger
-    fadeInSamples = 128;  // ~2.9ms at 44.1kHz - longer ramp-in to prevent clicks on rapid triggers
+    fadeInSamples = 256;  // ~5.8ms at 44.1kHz - longer ramp-in to prevent clicks on rapid triggers
     fadeOutSamples = 4096; // ~92.9ms at 44.1kHz - longer for smoother release
     
     // Set start delay for staggering voice starts within audio block
@@ -848,23 +864,31 @@ void SamplerVoice::process(float** output, int numChannels, int numSamples, doub
                     if (isRamping && rampSamplesRemaining > 0) {
                         rampGain += rampIncrement;
                         rampSamplesRemaining--;
+                        rampGain = std::min(rampGain, 1.0f); // Clamp to 1.0
+                        
                         if (rampSamplesRemaining <= 0) {
                             rampGain = targetGain;
                             isRamping = false;
                             // CRITICAL: Only deactivate after rampGain reaches 0 AND we're being stolen
                             if (isBeingStolen && rampGain <= 0.001f) {
-                            active = false;
+                                active = false;
                                 isBeingStolen = false;
                             }
                         }
                     }
                     
                     // CRITICAL: Apply microRamp (rampGain) to prevent clicks on voice start
-                    // rampGain starts at 0.0 and ramps to 1.0 over 128 samples
-                    // Always compute output smoothly - gains will naturally be 0.0 when inactive
-                    // This eliminates hard discontinuities that cause clicks
+                    // rampGain starts at 0.0 and ramps to 1.0 over 256 samples
+                    // Also apply an additional fade-in window for the first 64 samples to handle
+                    // cases where the sample starts with a non-zero value
                     float amplitude = baseAmplitude * envelopeValue;
-                    float outputSample = sample * voiceGain * rampGain * amplitude;
+                    float fadeInWindow = 1.0f;
+                    if (attackCounter < 64) {
+                        // Apply additional fade-in window for first 64 samples
+                        fadeInWindow = static_cast<float>(attackCounter) / 64.0f;
+                        fadeInWindow = std::max(0.0f, std::min(1.0f, fadeInWindow));
+                    }
+                    float outputSample = sample * voiceGain * rampGain * amplitude * fadeInWindow;
                     
                     // Safety processing: Only NaN guard and hard clamp - no soft clip
                     if (!std::isfinite(outputSample)) {
@@ -888,10 +912,10 @@ void SamplerVoice::process(float** output, int numChannels, int numSamples, doub
                     float voiceOutL = outputSample;
                     float voiceOutR = outputSample;
                     
-                    // Slew limit per sample
+                    // Slew limit per sample - more aggressive to prevent clicks
                     float deltaL = voiceOutL - slewLastOutL;
                     float deltaR = voiceOutR - slewLastOutR;
-                    const float maxStep = 0.02f;  // Slew max step (tunable)
+                    const float maxStep = 0.01f;  // Reduced max step for smoother transitions (was 0.02f)
                     
                     if (std::abs(deltaL) > maxStep) {
                         voiceOutL = slewLastOutL + (deltaL > 0.0f ? maxStep : -maxStep);
