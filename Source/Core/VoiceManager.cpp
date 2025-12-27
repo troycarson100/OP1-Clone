@@ -164,13 +164,15 @@ bool VoiceManager::noteOn(int note, float velocity, SampleDataPtr sampleData, bo
         }
     }
     
-    // CRITICAL: Check if there's already a voice that was playing this exact note
-    // If so, retrigger that voice (restart from beginning) instead of allocating a new one
-    // This provides true retrigger behavior for rapid key presses
-    // Check both active voices and voices in release phase (recently played this note)
+    // CRITICAL: Smart retrigger - when same note retriggers, use smooth transition
+    // Check if there's already a voice that was playing this exact note
+    // If so, retrigger it with smooth fade-in (noteOn preserves slew state when wasActive)
+    // This prevents the abrupt cut-off that causes clicks
     for (int i = 0; i < MAX_VOICES; ++i) {
         if (voices[i].getCurrentNote() == note) {
             // Found a voice that was playing this note (active or in release) - retrigger it
+            // noteOn will detect wasActive=true and preserve slew state for smooth transition
+            // rampGain and envelope will fade in from 0 over 256 samples
             // Apply slot parameters to this voice
             voices[i].setRepitch(repitchSemitones);
             voices[i].setStartPoint(startPoint);
@@ -183,6 +185,7 @@ bool VoiceManager::noteOn(int note, float velocity, SampleDataPtr sampleData, bo
             voices[i].setLoopEnabled(loopEnabled);
             voices[i].setLoopPoints(loopStartPoint, loopEndPoint);
             voices[i].setSampleData(sampleData);
+            // Retrigger - noteOn will handle smooth transition (preserves slew, fades in)
             voices[i].noteOn(note, velocity, startDelayOffset);
             wasStolen = false; // Not stolen, just retriggered
             return true;

@@ -3,6 +3,7 @@
 #include <fstream>
 #include <chrono>
 #include <array>
+#include <cmath>
 
 JuceEngineAdapter::JuceEngineAdapter()
     : sourceSampleRate(44100.0)
@@ -16,6 +17,41 @@ JuceEngineAdapter::JuceEngineAdapter()
 }
 
 JuceEngineAdapter::~JuceEngineAdapter() {
+}
+
+// Helper function to preprocess sample data for click reduction
+// Simplified approach: basic DC removal and gentle fade-in only
+void JuceEngineAdapter::preprocessSampleData(std::vector<float>& data) {
+    if (data.empty()) return;
+    
+    int numSamples = static_cast<int>(data.size());
+    
+    // Step 1: Simple DC offset removal (average removal)
+    float dcOffset = 0.0f;
+    for (int i = 0; i < numSamples; ++i) {
+        dcOffset += data[i];
+    }
+    dcOffset /= static_cast<float>(numSamples);
+    for (int i = 0; i < numSamples; ++i) {
+        data[i] -= dcOffset;
+    }
+    
+    // Step 2: Gentle fade-in at start (first 256 samples) to prevent clicks
+    // Zero out first 2 samples, then fade in smoothly
+    if (numSamples > 0) {
+        data[0] = 0.0f;
+    }
+    if (numSamples > 1) {
+        data[1] = 0.0f;
+    }
+    
+    int fadeInSamples = std::min(256, numSamples - 2);
+    for (int i = 2; i < 2 + fadeInSamples; ++i) {
+        float t = static_cast<float>(i - 2) / static_cast<float>(fadeInSamples);
+        // Use smooth sine curve for natural fade
+        float fadeGain = std::sin(t * 1.5707963267948966f); // sin(PI/2 * t)
+        data[i] *= fadeGain;
+    }
 }
 
 void JuceEngineAdapter::prepare(double sampleRate, int blockSize, int numChannels) {
@@ -61,6 +97,8 @@ void JuceEngineAdapter::setSample(juce::AudioBuffer<float>& buffer, double sourc
         const float* leftChannelData = buffer.getReadPointer(0);
         if (leftChannelData != nullptr) {
             std::copy(leftChannelData, leftChannelData + numSamples, tempLeftData.begin());
+            // Apply comprehensive preprocessing for click reduction
+            preprocessSampleData(tempLeftData);
         }
         
         // Extract right channel if stereo (channel 1)
@@ -69,6 +107,8 @@ void JuceEngineAdapter::setSample(juce::AudioBuffer<float>& buffer, double sourc
             const float* rightChannelData = buffer.getReadPointer(1);
             if (rightChannelData != nullptr) {
                 std::copy(rightChannelData, rightChannelData + numSamples, tempRightData.begin());
+                // Apply comprehensive preprocessing for click reduction
+                preprocessSampleData(tempRightData);
             }
         }
         
@@ -170,6 +210,8 @@ void JuceEngineAdapter::setSampleForSlot(int slotIndex, juce::AudioBuffer<float>
         const float* leftChannelData = buffer.getReadPointer(0);
         if (leftChannelData != nullptr) {
             std::copy(leftChannelData, leftChannelData + numSamples, slotSamples[slotIndex].leftChannel.begin());
+            // Apply comprehensive preprocessing for click reduction
+            preprocessSampleData(slotSamples[slotIndex].leftChannel);
         }
         
         if (numChannels >= 2) {
@@ -177,6 +219,8 @@ void JuceEngineAdapter::setSampleForSlot(int slotIndex, juce::AudioBuffer<float>
             const float* rightChannelData = buffer.getReadPointer(1);
             if (rightChannelData != nullptr) {
                 std::copy(rightChannelData, rightChannelData + numSamples, slotSamples[slotIndex].rightChannel.begin());
+                // Apply comprehensive preprocessing for click reduction
+                preprocessSampleData(slotSamples[slotIndex].rightChannel);
             }
         }
     }

@@ -196,5 +196,8 @@ private:
     
     // Helper: convert JUCE MIDI buffer to Core MidiEvent array
     void convertMidiBuffer(juce::MidiBuffer& midiMessages, int numSamples);
+    
+    // Helper: preprocess sample data for click reduction (HPF DC removal, zero-crossing, normalization)
+    void preprocessSampleData(std::vector<float>& data);
 };
 

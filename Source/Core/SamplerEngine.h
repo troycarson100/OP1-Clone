@@ -199,6 +199,10 @@ private:
     // Slew limiter for final mix (click suppressor)
     SlewLimiter mixSlewLimiter;
     
+    // Block boundary smoothing (prevents clicks between blocks)
+    float lastBlockSampleL;
+    float lastBlockSampleR;
+    
     // Get pop events (UI thread)
     int getPopEvents(PopEvent* out, int maxCount) {
         return popEventBuffer.read(out, maxCount);

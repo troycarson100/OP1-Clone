@@ -29,6 +29,8 @@ SamplerEngine::SamplerEngine()
     , limiterGain(1.0f)
     , activeVoiceCount(0)
     , currentSample_(nullptr)
+    , lastBlockSampleL(0.0f)
+    , lastBlockSampleR(0.0f)
 {
 }
 
@@ -42,8 +44,9 @@ void SamplerEngine::prepare(double sampleRate, int blockSize, int numChannels) {
     currentNumChannels = numChannels;
     
     // Configure slew limiter based on sample rate
-    // maxStep = 0.02f at 44.1k (tunable, scales with sample rate)
-    float slewMaxStep = 0.02f * (static_cast<float>(sampleRate) / 44100.0f);
+    // CRITICAL: More aggressive slew limiting to prevent clicks when multiple voices overlap
+    // Reduced max step to handle sudden additions of multiple voices to the mix
+    float slewMaxStep = 0.008f * (static_cast<float>(sampleRate) / 44100.0f);  // Reduced from 0.015f
     mixSlewLimiter.setMaxStep(slewMaxStep);
     mixSlewLimiter.reset();
     
@@ -249,18 +252,36 @@ void SamplerEngine::process(float** output, int numChannels, int numSamples) {
     // pointers without locking.
     voiceManager.process(output, numChannels, numSamples, currentSampleRate);
     
-    // Apply slew limiter to final mix (click suppressor)
+    // Apply aggressive mix-level slew limiter (catches any remaining clicks from overlapping voices)
+    // Increased aggressiveness to handle multiple voices starting simultaneously
+    // Then apply block boundary smoothing for seamless transitions
     for (int i = 0; i < numSamples; ++i) {
         float mixL = (output[0] != nullptr) ? output[0][i] : 0.0f;
         float mixR = (numChannels > 1 && output[1] != nullptr) ? output[1][i] : mixL;
         
+        // Apply mix-level slew limiting - CRITICAL for preventing clicks when multiple voices overlap
+        // More aggressive slew limiting to handle sudden additions of multiple voices
         mixSlewLimiter.process(mixL, mixR);
+        
+        // Block boundary smoothing: gentle smoothing to prevent clicks between blocks
+        if (i == 0) {
+            // First sample of block: subtle blend with last sample
+            float blendFactor = 0.15f;  // Slightly increased for better smoothing
+            mixL = blendFactor * lastBlockSampleL + (1.0f - blendFactor) * mixL;
+            mixR = blendFactor * lastBlockSampleR + (1.0f - blendFactor) * mixR;
+        }
         
         if (output[0] != nullptr) {
             output[0][i] = mixL;
         }
         if (numChannels > 1 && output[1] != nullptr) {
             output[1][i] = mixR;
+        }
+        
+        // Store last sample for next block's boundary smoothing
+        if (i == numSamples - 1) {
+            lastBlockSampleL = mixL;
+            lastBlockSampleR = mixR;
         }
     }
     

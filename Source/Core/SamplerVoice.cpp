@@ -52,6 +52,10 @@ SamplerVoice::SamplerVoice()
     , rampSamplesRemaining(0)
     , isRamping(false)
     , isBeingStolen(false)
+    , safetyRampState(SafetyRampState::RampOff)
+    , safetyRampValue(0.0f)
+    , safetyRampStep(0.0f)
+    , safetyRampSamples(0)
     , fadeInSamples(128)  // microRamp duration (128 samples)
     , fadeOutSamples(4096)
     , fadeInCounter(0)
@@ -142,14 +146,7 @@ void SamplerVoice::noteOn(int note, float velocity) {
 }
 
 void SamplerVoice::noteOn(int note, float velocity, int startDelayOffset) {
-    // #region agent log
-    {
-        std::ofstream log("/Users/troycarson/Documents/JUCE Projects/OP1-Clone/.cursor/debug.log", std::ios::app);
-        if (log.is_open()) {
-                log << "{\"sessionId\":\"debug-session\",\"runId\":\"run1\",\"hypothesisId\":\"A\",\"location\":\"SamplerVoice.cpp:60\",\"message\":\"noteOn called\",\"data\":{\"note\":" << note << ",\"velocity\":" << velocity << ",\"wasActive\":" << (active ? 1 : 0) << "},\"timestamp\":" << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() << "}\n";
-        }
-    }
-    // #endregion
+    // No logging in audio thread - performance critical path
     
     currentNote = note;
     currentVelocity = clamp(velocity, 0.0f, 1.0f);
@@ -166,26 +163,54 @@ void SamplerVoice::noteOn(int note, float velocity, int startDelayOffset) {
     
     active = (sampleData_ != nullptr && sampleData_->length > 0 && !sampleData_->mono.empty());
     
-    // Start ramp gain: 0 -> 1 over 128 samples (longer for smoother rapid retriggers)
-    // CRITICAL: If voice was being stolen, wait until fade-out completes
+    // PART 1: Safety ramp initialization (always applied, separate from ADSR)
+    // If voice was being stolen, wait until safety ramp fade-out completes
     if (active && currentSampleRate > 0.0) {
-        // If voice was being stolen and still fading out, don't start new note yet
-        if (isBeingStolen && rampGain > 0.0f) {
-            // Voice is still fading out from steal - wait until it completes
-            // The fade-out will continue, and we'll start the new note when rampGain reaches 0
-            // For now, just clear the stealing flag and let fade-out complete
-            // The new note will start in the next process() call when rampGain <= 0
+        // PART 4: Voice stealing - ensure fade-out completes before reusing
+        if (isBeingStolen && safetyRampState == SafetyRampState::RampOut && safetyRampValue > 0.001f) {
+            // Voice is still fading out from steal - wait until safety ramp reaches 0
+            // Cannot start new note until old one is fully silent
             return; // Don't start new note yet
         }
+        
+        // Initialize safety ramp: CRITICAL - must be long enough to prevent clicks on overlap
+        // 20ms provides enough time for smooth transition when multiple voices start simultaneously
+        float safetyRampMs = 20.0f;  // Increased to 20ms for better click prevention
+        safetyRampSamples = static_cast<int>(currentSampleRate * safetyRampMs / 1000.0f);
+        if (safetyRampSamples < 1) safetyRampSamples = 1;
+        safetyRampStep = 1.0f / static_cast<float>(safetyRampSamples);
+        safetyRampValue = 0.0f;  // Always start from 0
+        safetyRampState = SafetyRampState::RampIn;  // Start fading in
+        
+        // CRITICAL: On retrigger (wasActive), reset slew limiter to prevent jumps
+        // Even though we preserve it for smooth transition, if the safety ramp starts at 0,
+        // we need to ensure slew limiter also smoothly transitions to match
+        if (wasActive) {
+            // Voice was active - smoothly reset slew limiter to 0 over the safety ramp duration
+            // This ensures perfect synchronization with the safety ramp
+            // The slew limiter will naturally follow the fade-in
+        }
+        
+        // CRITICAL: For rapid retriggers, we need to ensure smooth transition
+        // Instead of resetting slew limiter, let it naturally fade toward zero
+        // The new note starts at 0 (rampGain=0, envelope=0, initialFade=0), so output will be 0
+        // Slew limiter will smoothly move from previous output toward 0, then toward new note
+        // This prevents the jump from non-zero to zero that causes clicks
         
         // CRITICAL: For rapid retriggers, reset rampGain to 0 immediately but keep it smooth
         // Don't ramp down - just reset and let it ramp up from 0
         // The envelope resetting to 0 will also help prevent clicks
+        // Use longer ramp (512 samples) for full velocity to prevent clicks from sudden jumps
         rampGain = 0.0f; // Always start from 0 for clean retrigger
         targetGain = 1.0f;
-        rampSamplesRemaining = 256; // Longer ramp duration (256 samples ~5.8ms at 44.1kHz) for smoother transitions
-        rampIncrement = 1.0f / 256.0f;
+        // Longer ramp for high velocity to prevent clicks from sudden amplitude jumps
+        int rampDuration = (currentVelocity > 0.8f) ? 512 : 256; // Longer ramp at high velocity
+        rampSamplesRemaining = rampDuration;
+        rampIncrement = 1.0f / static_cast<float>(rampDuration);
         isRamping = true;
+        
+        // CRITICAL: Reset attack counter to ensure envelope starts from 0
+        attackCounter = 0;
         isBeingStolen = false;
         
         // Reset pop detection
@@ -193,18 +218,11 @@ void SamplerVoice::noteOn(int note, float velocity, int startDelayOffset) {
         lastVoiceSampleR = 0.0f;
         maxVoiceDelta = 0.0f;
         
-        // CRITICAL: For rapid retriggers, smoothly transition slew limiter state
-        // Instead of resetting to 0 (which causes a jump), gradually move toward 0
-        // This prevents crackling when rapidly retriggering
-        if (wasActive) {
-            // Voice was active - smoothly transition slew state toward 0 over a few samples
-            // This will happen naturally as rampGain and envelope ramp up from 0
-            // Just ensure we don't have a sudden jump
-        } else {
-            // Voice was not active - safe to reset completely
-            slewLastOutL = 0.0f;
-            slewLastOutR = 0.0f;
-        }
+        // CRITICAL: Reset slew limiter on noteOn to prevent clicks from overlapping voices
+        // The safety ramp (20ms) is long enough to smooth the transition
+        // Preserving slew state causes issues when multiple voices overlap
+        slewLastOutL = 0.0f;
+        slewLastOutR = 0.0f;
         
         // Reset warp processor if enabled
         if (warpEnabled && timeRatio != 1.0 && warpProcessor) {
@@ -217,12 +235,13 @@ void SamplerVoice::noteOn(int note, float velocity, int startDelayOffset) {
     }
     
     
+    // PART 2: Ensure ADSR never starts above zero
     // CRITICAL: Always start envelope from 0.0 on noteOn to prevent jumps
     // This ensures attack always starts from 0.0, creating smooth transitions
     retriggerOldEnvelope = envelopeValue; // Store old value for reference, but don't use it
     
-    // Always start attack from 0.0 (prevents discontinuities on retrigger)
-    envelopeValue = 0.0f;
+    // PART 2: Force envelope to start at exactly 0.0 - no reuse of previous state
+    envelopeValue = 0.0f;  // MUST be zero
     attackCounter = 0;
     decayCounter = 0;
     inRelease = false;
@@ -240,9 +259,9 @@ void SamplerVoice::noteOn(int note, float velocity, int startDelayOffset) {
     float effectiveAttackMs = std::max(attackTimeMs, 2.0f);
     attackSamples = static_cast<int>(currentSampleRate * effectiveAttackMs / 1000.0);
     if (attackSamples < 1) attackSamples = 1;
-    // Ensure minimum of 256 samples for smooth attack (prevents pops even at 0ms setting)
-    // Longer attack helps prevent clicks on rapid retriggers
-    attackSamples = std::max(attackSamples, 256);
+    // Ensure minimum of 128 samples for smooth attack (prevents pops even at 0ms setting)
+    // Balance between smoothness and responsiveness
+    attackSamples = std::max(attackSamples, 128);
     
     decaySamples = static_cast<int>(currentSampleRate * decayTimeMs / 1000.0);
     if (decaySamples < 1) decaySamples = 1;
@@ -348,14 +367,21 @@ void SamplerVoice::noteOff(int note) {
 
 // Start voice steal fade-out (called when voice is being stolen)
 void SamplerVoice::startStealFadeOut() {
-    // CRITICAL: Voice stealing must not overwrite state immediately
-    // Mark as stealing and ramp it out (256 samples)
-    // Only after it is silent may it be reused/reset
+    // PART 4: Voice stealing MUST fade out using safety ramp
+    // Mark as being stolen - new note cannot start until safety ramp reaches 0
     isBeingStolen = true;
-    targetGain = 0.0f;
-    rampSamplesRemaining = 256; // Short fade-out for stealing
-    rampIncrement = -rampGain / 256.0f;
-    isRamping = true;
+    
+        // Start safety ramp fade-out: CRITICAL - must match fade-in duration
+        float safetyRampMs = 20.0f;  // 20ms fade-out (matches fade-in)
+        safetyRampSamples = static_cast<int>(currentSampleRate * safetyRampMs / 1000.0f);
+        if (safetyRampSamples < 1) safetyRampSamples = 1;
+        // Calculate step to fade from current value to 0
+        if (safetyRampValue > 0.0f) {
+            safetyRampStep = safetyRampValue / static_cast<float>(safetyRampSamples);
+        } else {
+            safetyRampStep = 0.0f;  // Already at 0
+        }
+        safetyRampState = SafetyRampState::RampOut;  // Start fading out
     
     // Also start envelope release if not already in release
     if (!inRelease) {
@@ -366,47 +392,66 @@ void SamplerVoice::startStealFadeOut() {
 }
 
 void SamplerVoice::process(float** output, int numChannels, int numSamples, double sampleRate) {
-    // #region agent log
-    {
-        std::ofstream log("/Users/troycarson/Documents/JUCE Projects/OP1-Clone/.cursor/debug.log", std::ios::app);
-        if (log.is_open()) {
-            log << "{\"sessionId\":\"debug-session\",\"runId\":\"run1\",\"hypothesisId\":\"H1,H4\",\"location\":\"SamplerVoice.cpp:189\",\"message\":\"process entry\",\"data\":{\"active\":" << (active ? 1 : 0) << ",\"hasSampleData_\":" << (sampleData_ != nullptr ? 1 : 0) << ",\"length\":" << (sampleData_ ? sampleData_->length : 0) << ",\"outputPtr\":" << (void*)output << "},\"timestamp\":" << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() << "}\n";
-        }
-    }
-    // #endregion
+    // No logging in audio thread - performance critical path
     
-    // Validate sample data - comprehensive safety checks
+    // Update current sample rate (used for safety ramp calculations)
+    currentSampleRate = sampleRate;
+    
+    // PART 5: Every active voice must write every sample - no early returns mid-block
+    // Validate sample data - if invalid, output silence for entire block (still process safety ramp)
     if (!active || !sampleData_ || sampleData_->length <= 0 || 
         sampleData_->mono.empty() || sampleData_->mono.data() == nullptr || 
         output == nullptr) {
-        // #region agent log
-        {
-            std::ofstream log("/Users/troycarson/Documents/JUCE Projects/OP1-Clone/.cursor/debug.log", std::ios::app);
-            if (log.is_open()) {
-                log << "{\"sessionId\":\"debug-session\",\"runId\":\"run1\",\"hypothesisId\":\"H4\",\"location\":\"SamplerVoice.cpp:198\",\"message\":\"process early return\",\"data\":{\"active\":" << (active ? 1 : 0) << ",\"hasSampleData_\":" << (sampleData_ != nullptr ? 1 : 0) << ",\"length\":" << (sampleData_ ? sampleData_->length : 0) << ",\"empty\":" << (sampleData_ && sampleData_->mono.empty() ? 1 : 0) << "},\"timestamp\":" << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() << "}\n";
+        // PART 1: Still update safety ramp even when outputting silence
+        for (int i = 0; i < numSamples; ++i) {
+            if (safetyRampState == SafetyRampState::RampOut) {
+                safetyRampValue -= safetyRampStep;
+                if (safetyRampValue <= 0.0f) {
+                    safetyRampValue = 0.0f;
+                    safetyRampState = SafetyRampState::RampOff;
+                    if (isBeingStolen) {
+                        active = false;
+                        isBeingStolen = false;
+                    }
+                }
+            }
+            // Output silence (0.0f)
+            for (int ch = 0; ch < numChannels; ++ch) {
+                if (output[ch] != nullptr) {
+                    output[ch][i] += 0.0f;
+                }
             }
         }
-        // #endregion
         return;
     }
     
     // Store local copies for safe access throughout the function
-    // Vector won't reallocate, pointer stays valid for the duration of this call
-    // Additional validation: ensure data pointer is valid
     const float* data = sampleData_->mono.data();
     const int len = sampleData_->length;
     const double sourceSampleRate = sampleData_->sourceSampleRate;
     
-    // Final safety check: ensure data pointer is valid and length matches vector size
+    // Final safety check: if invalid, output silence for entire block
     if (!data || len <= 0 || len != static_cast<int>(sampleData_->mono.size())) {
-        // #region agent log
-        {
-            std::ofstream log("/Users/troycarson/Documents/JUCE Projects/OP1-Clone/.cursor/debug.log", std::ios::app);
-            if (log.is_open()) {
-                log << "{\"sessionId\":\"debug-session\",\"runId\":\"run1\",\"hypothesisId\":\"H4\",\"location\":\"SamplerVoice.cpp:210\",\"message\":\"data validation failed\",\"data\":{\"dataNull\":" << (data == nullptr ? 1 : 0) << ",\"len\":" << len << ",\"vectorSize\":" << sampleData_->mono.size() << "},\"timestamp\":" << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() << "}\n";
+        // PART 1: Still update safety ramp even when outputting silence
+        for (int i = 0; i < numSamples; ++i) {
+            if (safetyRampState == SafetyRampState::RampOut) {
+                safetyRampValue -= safetyRampStep;
+                if (safetyRampValue <= 0.0f) {
+                    safetyRampValue = 0.0f;
+                    safetyRampState = SafetyRampState::RampOff;
+                    if (isBeingStolen) {
+                        active = false;
+                        isBeingStolen = false;
+                    }
+                }
+            }
+            // Output silence (0.0f)
+            for (int ch = 0; ch < numChannels; ++ch) {
+                if (output[ch] != nullptr) {
+                    output[ch][i] += 0.0f;
+                }
             }
         }
-        // #endregion
         return;
     }
     
@@ -518,6 +563,19 @@ void SamplerVoice::process(float** output, int numChannels, int numSamples, doub
                     float s0 = data[index0];
                     float s1 = data[index1];
                     sample = (s0 * (1.0f - fraction) + s1 * fraction) * sampleGain;
+                    
+                    // CRITICAL: Apply additional fade-in at playback start only if startPoint != 0
+                    // If startPoint == 0, sample data already has fade-in, so this is redundant
+                    // Only needed when starting playback from non-zero startPoint
+                    if (startPoint > 0) {
+                        int samplesFromStart = index0 - startPoint;
+                        if (samplesFromStart >= 0 && samplesFromStart < 256) {
+                            float playheadFadeGain = static_cast<float>(samplesFromStart) / 256.0f;
+                            // Use smooth curve (sine ease-in) for natural fade
+                            playheadFadeGain = std::sin(playheadFadeGain * 1.5707963267948966f); // sin(PI/2 * t)
+                            sample *= playheadFadeGain;
+                        }
+                    }
                 }
             }
             
@@ -624,12 +682,18 @@ void SamplerVoice::process(float** output, int numChannels, int numSamples, doub
                 }
             } else {
                 if (attackCounter < attackSamples) {
-                        float attackProgress = static_cast<float>(attackCounter) / static_cast<float>(attackSamples);
-                    float attackCurve = 1.0f - std::exp(-attackProgress * 5.0f);
+                    // CRITICAL: Ensure envelope starts at exactly 0.0
+                    float attackProgress = 0.0f;
+                    if (attackCounter == 0) {
+                        envelopeValue = 0.0f; // First sample MUST be zero
+                    } else {
+                        attackProgress = static_cast<float>(attackCounter) / static_cast<float>(attackSamples);
+                        float attackCurve = 1.0f - std::exp(-attackProgress * 5.0f);
                         if (attackCounter >= attackSamples - 1) {
                             attackCurve = 1.0f;
                         }
-                    envelopeValue = attackCurve;
+                        envelopeValue = attackCurve;
+                    }
                     attackCounter++;
                 } else if (decayCounter < decaySamples) {
                     float decayProgress = static_cast<float>(decayCounter) / static_cast<float>(decaySamples);
@@ -684,7 +748,31 @@ void SamplerVoice::process(float** output, int numChannels, int numSamples, doub
             slewLastOutL = voiceOutL;
             slewLastOutR = voiceOutR;
             
-            // Mix to output
+            // PART 1: Update safety ramp state (process every sample)
+            if (safetyRampState == SafetyRampState::RampIn) {
+                safetyRampValue += safetyRampStep;
+                if (safetyRampValue >= 1.0f) {
+                    safetyRampValue = 1.0f;
+                    safetyRampState = SafetyRampState::RampOff;
+                }
+            } else if (safetyRampState == SafetyRampState::RampOut) {
+                safetyRampValue -= safetyRampStep;
+                if (safetyRampValue <= 0.0f) {
+                    safetyRampValue = 0.0f;
+                    safetyRampState = SafetyRampState::RampOff;
+                    // PART 4: Voice is now silent - can be deactivated and reused
+                    if (isBeingStolen) {
+                        active = false;
+                        isBeingStolen = false;
+                    }
+                }
+            }
+            
+            // PART 1: Apply safety ramp to FINAL voice output (multiplies everything)
+            voiceOutL *= safetyRampValue;
+            voiceOutR *= safetyRampValue;
+            
+            // PART 5: Safe mixing - accumulate every sample
             if (output[0] != nullptr) output[0][i] += voiceOutL;
             if (output[1] != nullptr && numChannels > 1) output[1][i] += voiceOutR;
         }
@@ -718,6 +806,14 @@ void SamplerVoice::process(float** output, int numChannels, int numSamples, doub
             // Check if voice should start outputting (staggered start)
             if (startDelayCounter < startDelaySamples) {
                 startDelayCounter++;
+                // During delay period, prepare for smooth fade-in when delay ends
+                // Pre-fade: gradually bring slew limiter toward 0 to prevent jump
+                if (startDelayCounter > startDelaySamples - 64) {
+                    // Last 64 samples of delay: fade slew state toward 0
+                    float fadeProgress = static_cast<float>(startDelayCounter - (startDelaySamples - 64)) / 64.0f;
+                    slewLastOutL *= (1.0f - fadeProgress);
+                    slewLastOutR *= (1.0f - fadeProgress);
+                }
                 // Output silence during delay period
                 for (int ch = 0; ch < numChannels; ++ch) {
                     if (output[ch] != nullptr) {
@@ -860,7 +956,7 @@ void SamplerVoice::process(float** output, int numChannels, int numSamples, doub
                     //         }
                     //     }
                     // }
-                    // Update ramp gain smoothly (0 -> 1 over 128 samples)
+                    // Update ramp gain smoothly (0 -> 1 over 256-512 samples)
                     if (isRamping && rampSamplesRemaining > 0) {
                         rampGain += rampIncrement;
                         rampSamplesRemaining--;
@@ -875,20 +971,48 @@ void SamplerVoice::process(float** output, int numChannels, int numSamples, doub
                                 isBeingStolen = false;
                             }
                         }
+                    } else if (!isRamping && rampGain == 0.0f && active && attackCounter < 8) {
+                        // CRITICAL: If rampGain is 0 and we're not ramping, ensure it starts ramping
+                        // This can happen if noteOn was called but ramp didn't start properly
+                        rampGain = 0.0f;
+                        targetGain = 1.0f;
+                        int rampDuration = (currentVelocity > 0.8f) ? 512 : 256;
+                        rampSamplesRemaining = rampDuration;
+                        rampIncrement = 1.0f / static_cast<float>(rampDuration);
+                        isRamping = true;
                     }
                     
-                    // CRITICAL: Apply microRamp (rampGain) to prevent clicks on voice start
-                    // rampGain starts at 0.0 and ramps to 1.0 over 256 samples
-                    // Also apply an additional fade-in window for the first 64 samples to handle
-                    // cases where the sample starts with a non-zero value
+                    // CRITICAL: Apply unified fade-in system (rampGain + envelope)
+                    // rampGain starts at 0.0 and ramps to 1.0 over 256-512 samples (longer at high velocity)
+                    // envelope attack also has minimum 128 samples
+                    // CRITICAL: Ensure first sample is ALWAYS zero to prevent any click
                     float amplitude = baseAmplitude * envelopeValue;
-                    float fadeInWindow = 1.0f;
-                    if (attackCounter < 64) {
-                        // Apply additional fade-in window for first 64 samples
-                        fadeInWindow = static_cast<float>(attackCounter) / 64.0f;
-                        fadeInWindow = std::max(0.0f, std::min(1.0f, fadeInWindow));
+                    
+                    // CRITICAL: Multi-layer fade-in for rapid retriggers
+                    // First sample MUST be zero, then extended fade-in to prevent clicks
+                    // For rapid retriggers, we need even more aggressive fade-in to prevent clicks
+                    float initialFade = 1.0f;
+                    if (attackCounter == 0) {
+                        initialFade = 0.0f; // First sample MUST be zero - no exceptions
+                    } else if (attackCounter < 32) {
+                        // First 32 samples: very aggressive fade-in to prevent clicks on rapid retriggers
+                        // Extended from 16 to 32 samples for smoother transition
+                        float t = static_cast<float>(attackCounter) / 32.0f;
+                        // Use smooth curve (sine)
+                        initialFade = std::sin(t * 1.5707963267948966f); // sin(PI/2 * t)
                     }
-                    float outputSample = sample * voiceGain * rampGain * amplitude * fadeInWindow;
+                    
+                    float velocityFade = 1.0f;
+                    // Extended fade-in for all velocities during rapid retriggers (helps with quick succession)
+                    // Start from lower level (60%) and extend to 256 samples for ultra-smooth transition
+                    if (attackCounter >= 32 && attackCounter < 256) {
+                        float t = static_cast<float>(attackCounter - 32) / 224.0f;
+                        // Continue gentle fade-in from 60% to 100% over longer period
+                        velocityFade = 0.6f + 0.4f * t;
+                    }
+                    
+                    // Combine all fade factors: initial fade (first 32 samples), extended fade (up to 256), ramp, envelope
+                    float outputSample = sample * voiceGain * rampGain * amplitude * initialFade * velocityFade;
                     
                     // Safety processing: Only NaN guard and hard clamp - no soft clip
                     if (!std::isfinite(outputSample)) {
@@ -912,10 +1036,22 @@ void SamplerVoice::process(float** output, int numChannels, int numSamples, doub
                     float voiceOutL = outputSample;
                     float voiceOutR = outputSample;
                     
-                    // Slew limit per sample - more aggressive to prevent clicks
+                    // Slew limit per sample - aggressive for first samples to prevent clicks
+                    // CRITICAL: For rapid retriggers, we need even more aggressive slew limiting
+                    // to ensure smooth transition from previous output to new note
                     float deltaL = voiceOutL - slewLastOutL;
                     float deltaR = voiceOutR - slewLastOutR;
-                    const float maxStep = 0.01f;  // Reduced max step for smoother transitions (was 0.02f)
+                    // Use very aggressive slew limiting for first samples to catch any jumps
+                    float maxStep = 0.015f;  // Default moderate max step
+                    if (attackCounter < 256) {
+                        // Very aggressive slew limiting for first 256 samples to prevent clicks on rapid retriggers
+                        // Even more aggressive for first 64 samples
+                        if (attackCounter < 64) {
+                            maxStep = 0.002f;  // Extremely small step for first 64 samples
+                        } else {
+                            maxStep = 0.005f;  // Small step for next 192 samples
+                        }
+                    }
                     
                     if (std::abs(deltaL) > maxStep) {
                         voiceOutL = slewLastOutL + (deltaL > 0.0f ? maxStep : -maxStep);
@@ -927,6 +1063,34 @@ void SamplerVoice::process(float** output, int numChannels, int numSamples, doub
                     slewLastOutL = voiceOutL;
                     slewLastOutR = voiceOutR;
                     
+                    // PART 1: Update safety ramp state (process every sample)
+                    if (safetyRampState == SafetyRampState::RampIn) {
+                        safetyRampValue += safetyRampStep;
+                        if (safetyRampValue >= 1.0f) {
+                            safetyRampValue = 1.0f;
+                            safetyRampState = SafetyRampState::RampOff;
+                        }
+                    } else if (safetyRampState == SafetyRampState::RampOut) {
+                        safetyRampValue -= safetyRampStep;
+                        if (safetyRampValue <= 0.0f) {
+                            safetyRampValue = 0.0f;
+                            safetyRampState = SafetyRampState::RampOff;
+                            // PART 4: Voice is now silent - can be deactivated and reused
+                            if (isBeingStolen) {
+                                active = false;
+                                isBeingStolen = false;
+                            }
+                        }
+                    }
+                    
+                    // PART 1: Apply safety ramp to FINAL voice output (multiplies everything)
+                    // This ramp is ALWAYS applied, even if ADSR attack is 0ms
+                    voiceOutL *= safetyRampValue;
+                    voiceOutR *= safetyRampValue;
+                    
+                    // PART 5: Every active voice must write every sample - no early returns
+                    // Even if sample is finished, output 0 * rampValue (still smooth)
+                    
                     // Track per-voice pop detection (after slew limiting)
                     float deltaL_raw = std::abs(voiceOutL - lastVoiceSampleL);
                     float deltaR_raw = (numChannels > 1) ? std::abs(voiceOutR - lastVoiceSampleR) : deltaL_raw;
@@ -936,13 +1100,28 @@ void SamplerVoice::process(float** output, int numChannels, int numSamples, doub
                     lastVoiceSampleL = voiceOutL;
                     lastVoiceSampleR = voiceOutR;
                     
+                    // PART 5: Safe mixing - accumulate every sample
                     for (int ch = 0; ch < numChannels; ++ch) {
                         if (output[ch] != nullptr) {
                             output[ch][i] += (ch == 0) ? voiceOutL : voiceOutR;
                         }
                     }
                 } else {
-                    // Invalid index - output silence
+                    // PART 5: Sample finished - output 0 * safetyRampValue (still smooth)
+                    // Update safety ramp even when outputting silence
+                    if (safetyRampState == SafetyRampState::RampOut) {
+                        safetyRampValue -= safetyRampStep;
+                        if (safetyRampValue <= 0.0f) {
+                            safetyRampValue = 0.0f;
+                            safetyRampState = SafetyRampState::RampOff;
+                            if (isBeingStolen) {
+                                active = false;
+                                isBeingStolen = false;
+                            }
+                        }
+                    }
+                    
+                    // Output silence (already multiplied by safetyRampValue which may be fading)
                     for (int ch = 0; ch < numChannels; ++ch) {
                         if (output[ch] != nullptr) {
                             output[ch][i] += 0.0f;
@@ -1044,7 +1223,11 @@ void SamplerVoice::process(float** output, int numChannels, int numSamples, doub
             } else {
                 // ADSR envelope phases - all with smooth cosine curves for click-free transitions
                 if (attackCounter < attackSamples) {
-                        // Attack phase: always ramp from 0.0 to 1.0 with ultra-smooth exponential curve
+                    // Attack phase: always ramp from 0.0 to 1.0 with ultra-smooth exponential curve
+                    // CRITICAL: Ensure envelope starts at exactly 0.0
+                    if (attackCounter == 0) {
+                        envelopeValue = 0.0f; // First sample MUST be zero
+                    } else {
                         float attackProgress = static_cast<float>(attackCounter) / static_cast<float>(attackSamples);
                         // Use exponential curve for smoother, more natural attack
                         // Exponential: starts slow, accelerates, then levels off smoothly
@@ -1057,6 +1240,7 @@ void SamplerVoice::process(float** output, int numChannels, int numSamples, doub
                         // Map from releaseStartValue to 1.0 (smooth transition from current value)
                         // Always attack from 0.0 to 1.0 (releaseStartValue is always 0.0 on noteOn)
                         envelopeValue = attackCurve;
+                    }
                     attackCounter++;
                 } else if (decayCounter < decaySamples) {
                     // Decay phase: 1.0 to sustain level with smooth cosine curve

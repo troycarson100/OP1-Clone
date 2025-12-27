@@ -216,6 +216,18 @@ private:
     // Voice stealing state
     bool isBeingStolen;      // True when voice is being stolen (fading out)
     
+    // PART 1: Per-voice safety ramp (separate from ADSR, always applied)
+    // This is a dedicated anti-click ramp that multiplies the FINAL voice output
+    enum class SafetyRampState {
+        RampOff,   // Ramp complete (at 1.0 for RampIn, at 0.0 for RampOut)
+        RampIn,    // Fading in (0.0 -> 1.0)
+        RampOut    // Fading out (1.0 -> 0.0)
+    };
+    SafetyRampState safetyRampState;  // Current ramp state
+    float safetyRampValue;            // Current ramp value (0.0 to 1.0)
+    float safetyRampStep;             // Ramp step per sample
+    int safetyRampSamples;            // Total ramp duration in samples (5-10ms)
+    
     // Micro fade state (for click removal) - DEPRECATED, using rampGain instead
     int fadeInSamples;       // Fade-in duration (128 samples)
     int fadeOutSamples;      // Fade-out duration (512 samples)
