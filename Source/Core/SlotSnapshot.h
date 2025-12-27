@@ -32,8 +32,7 @@ namespace Core {
         // Playback mode
         bool isPolyphonic;
         
-        // Sample playback mode (0 = Stacked, 1 = Round Robin)
-        int playbackMode;  // 0 = Stacked (default), 1 = Round Robin
+        // Note: playbackMode is now global, not per-slot (removed from SlotSnapshot)
         
         // Sample name
         std::string sampleName;
@@ -55,7 +54,6 @@ namespace Core {
             , loopEndPoint(0)
             , loopEnabled(false)
             , isPolyphonic(true)
-            , playbackMode(0)  // 0 = Stacked (default)
             , sampleName("Default (440Hz tone)")
         {
         }

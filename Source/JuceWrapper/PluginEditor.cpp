@@ -97,8 +97,11 @@ Op1CloneAudioProcessorEditor::Op1CloneAudioProcessorEditor(Op1CloneAudioProcesso
     lpEnvAmount = 0.0f;  // DEPRECATED - kept for future use
     lpDriveDb = 0.0f;  // Default to 0 dB
     isPolyphonic = true;  // Default to Poly/Stereo
-    playbackMode = 0;  // Default to Stacked (0 = Stacked, 1 = Round Robin)
+    playbackMode = 0;  // Default to Stacked (0 = Stacked, 1 = Round Robin) - GLOBAL, not per-slot
     roundRobinIndex = 0;  // Start at first slot for round robin
+    
+    // Initialize global playbackMode in adapter
+    audioProcessor.setPlaybackMode(playbackMode);
     loopStartPoint = 0;
     loopEndPoint = 0;
     loopEnabled = false;  // Default to OFF
@@ -666,7 +669,7 @@ void Op1CloneAudioProcessorEditor::saveCurrentStateToSlot(int slotIndex) {
     snapshot.loopEndPoint = loopEndPoint;
     snapshot.loopEnabled = loopEnabled;
     snapshot.isPolyphonic = isPolyphonic;
-    snapshot.playbackMode = playbackMode;
+    // Note: playbackMode is now global, not saved per-slot
     snapshot.sampleName = currentSampleName.toStdString();  // Save sample name
 }
 
@@ -703,8 +706,11 @@ void Op1CloneAudioProcessorEditor::loadStateFromSlot(int slotIndex) {
     loopEndPoint = snapshot.loopEndPoint;
     loopEnabled = snapshot.loopEnabled;
     isPolyphonic = snapshot.isPolyphonic;
-    playbackMode = snapshot.playbackMode;
+    // Note: playbackMode is now global, not loaded per-slot (stays at current global value)
     currentSampleName = juce::String(snapshot.sampleName);  // Load sample name
+    
+    // Ensure global playbackMode is applied to adapter after loading slot
+    audioProcessor.setPlaybackMode(playbackMode);
     
     // Update sample name label with slot letter (A-E)
     // Truncate if too long to prevent overlap with ADSR pill
@@ -749,6 +755,9 @@ void Op1CloneAudioProcessorEditor::loadStateFromSlot(int slotIndex) {
     audioProcessor.setSlotADSR(slotIndex, adsrAttackMs, adsrDecayMs, adsrSustain, adsrReleaseMs);
     audioProcessor.setSlotLoopEnabled(slotIndex, loopEnabled);
     audioProcessor.setSlotLoopPoints(slotIndex, loopStartPoint, loopEndPoint);
+    
+    // Ensure global playbackMode is applied (not per-slot)
+    audioProcessor.setPlaybackMode(playbackMode);
     
     // Apply values to processor and UI
     updateSampleEditing();
