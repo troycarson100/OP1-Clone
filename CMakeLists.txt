@@ -54,6 +54,7 @@ target_sources(Op1Clone PRIVATE
     Source/Core/DriveEffect.cpp
     Source/Core/LofiEffect.cpp
     Source/Core/DSP/SignalsmithStretchWrapper.cpp
+    Source/Core/DSP/OrbitBlender.cpp
 )
 
 
@@ -95,8 +96,12 @@ target_sources(Op1Clone PRIVATE
     Source/JuceWrapper/InstrumentMenuComponent.h
     Source/JuceWrapper/PianoIconButton.cpp
     Source/JuceWrapper/PianoIconButton.h
+    Source/JuceWrapper/OrbitIconButton.cpp
+    Source/JuceWrapper/OrbitIconButton.h
     Source/JuceWrapper/SampleSlotComponent.cpp
     Source/JuceWrapper/SampleSlotComponent.h
+    Source/JuceWrapper/OrbitVisualizationComponent.cpp
+    Source/JuceWrapper/OrbitVisualizationComponent.h
 )
 
 # Custom standalone main file (only for standalone target)

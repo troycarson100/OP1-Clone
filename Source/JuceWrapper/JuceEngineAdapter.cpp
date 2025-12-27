@@ -9,10 +9,23 @@ JuceEngineAdapter::JuceEngineAdapter()
     : sourceSampleRate(44100.0)
     , playbackMode(0)  // Default to Stacked
     , roundRobinIndex(0)
+    , currentOrbitWeights{0.25f, 0.25f, 0.25f, 0.25f}  // Equal weights initially
+    , lastOrbitUpdateTime(0.0)
+    , currentSampleRate(44100.0)
+    , orbitRateHz(1.0f)
+    , orbitShape(0)
 {
     // Initialize all slots as inactive
     for (int i = 0; i < 5; ++i) {
         activeSlots[i].store(false, std::memory_order_relaxed);
+    }
+    
+    // Initialize orbit engines and buffers
+    for (int i = 0; i < 4; ++i) {
+        orbitEngines[i] = std::make_unique<Core::SamplerEngine>();
+        orbitSlotNotes[i] = -1;  // Not playing
+        orbitChannelPointers[i].resize(2);  // Stereo
+        orbitTempBuffers[i].resize(2048 * 2);  // Allocate temp buffer (L+R interleaved, max 2048 samples)
     }
 }
 
@@ -55,7 +68,25 @@ void JuceEngineAdapter::preprocessSampleData(std::vector<float>& data) {
 }
 
 void JuceEngineAdapter::prepare(double sampleRate, int blockSize, int numChannels) {
+    currentSampleRate = sampleRate;
     engine.prepare(sampleRate, blockSize, numChannels);
+    
+    // Prepare orbit engines
+    for (int i = 0; i < 4; ++i) {
+        orbitEngines[i] = std::make_unique<Core::SamplerEngine>();
+        orbitEngines[i]->prepare(sampleRate, blockSize, numChannels);
+        // Setup channel pointers for orbit engines (point to temp buffers)
+        orbitChannelPointers[i].resize(numChannels);
+        orbitTempBuffers[i].resize(blockSize * numChannels);  // Allocate temp buffer for L+R
+        orbitChannelPointers[i][0] = orbitTempBuffers[i].data();  // Left channel
+        if (numChannels > 1) {
+            orbitChannelPointers[i][1] = orbitTempBuffers[i].data() + blockSize;  // Right channel
+        }
+        orbitSlotNotes[i] = -1;  // Not playing
+    }
+    
+    // Reset orbit blender
+    orbitBlender.reset();
     
     // Pre-allocate channel pointer array (max 8 channels should be enough)
     channelPointers.resize(std::max(numChannels, 8));
@@ -338,6 +369,10 @@ void JuceEngineAdapter::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
     if (loadedSlots.empty()) {
         // Use default engine sample
         engine.handleMidi(midiEventBuffer.data(), static_cast<int>(midiEventBuffer.size()));
+    } else if (playbackMode == 2) {
+        // Orbit mode: blend between slots A-D
+        processOrbitMode(buffer, numChannels, numSamples);
+        return;  // Orbit mode handles its own processing
     } else if (playbackMode == 0) {
         // Stacked mode: trigger all loaded slots (even if just one)
         // Stacked mode with multiple slots: trigger all loaded slots
@@ -602,6 +637,167 @@ void JuceEngineAdapter::setLoopEnvAttack(float attackMs) {
 
 void JuceEngineAdapter::setLoopEnvRelease(float releaseMs) {
     engine.setLoopEnvRelease(releaseMs);
+}
+
+void JuceEngineAdapter::setOrbitRate(float rateHz) {
+    orbitRateHz = rateHz;
+    orbitBlender.setRateHz(rateHz);
+}
+
+void JuceEngineAdapter::setOrbitShape(int shape) {
+    orbitShape = shape;
+    Core::DSP::OrbitBlender::Shape shapeEnum = Core::DSP::OrbitBlender::Shape::Circle;
+    switch (shape) {
+        case 0: shapeEnum = Core::DSP::OrbitBlender::Shape::Circle; break;
+        case 1: shapeEnum = Core::DSP::OrbitBlender::Shape::PingPong; break;
+        case 2: shapeEnum = Core::DSP::OrbitBlender::Shape::Corners; break;
+        case 3: shapeEnum = Core::DSP::OrbitBlender::Shape::RandomSmooth; break;
+        case 4: shapeEnum = Core::DSP::OrbitBlender::Shape::Figure8; break;
+        case 5: shapeEnum = Core::DSP::OrbitBlender::Shape::ZigZag; break;
+        case 6: shapeEnum = Core::DSP::OrbitBlender::Shape::Spiral; break;
+        case 7: shapeEnum = Core::DSP::OrbitBlender::Shape::Square; break;
+        default: shapeEnum = Core::DSP::OrbitBlender::Shape::Circle; break;
+    }
+    orbitBlender.setShape(shapeEnum);
+}
+
+float JuceEngineAdapter::getOrbitRate() const {
+    return orbitRateHz;
+}
+
+int JuceEngineAdapter::getOrbitShape() const {
+    return orbitShape;
+}
+
+std::array<float, 4> JuceEngineAdapter::getOrbitWeights() const {
+    return currentOrbitWeights;
+}
+
+float JuceEngineAdapter::getOrbitPhase() const {
+    return orbitBlender.getPhase();
+}
+
+void JuceEngineAdapter::processOrbitMode(juce::AudioBuffer<float>& buffer, int numChannels, int numSamples) {
+    // Update orbit blender (use sample-based timing for audio thread safety)
+    float dt = static_cast<float>(numSamples) / static_cast<float>(currentSampleRate);
+    currentOrbitWeights = orbitBlender.update(dt);
+    
+    // Get loaded slots A-D
+    std::vector<int> loadedSlots;
+    for (int i = 0; i < 4; ++i) {  // Only slots A-D
+        if (slotSamples[i].hasSample && !slotSamples[i].leftChannel.empty()) {
+            loadedSlots.push_back(i);
+        }
+    }
+    
+    if (loadedSlots.size() < 2) {
+        // Degenerate case: < 2 slots loaded, just play the single slot (or nothing)
+        if (loadedSlots.size() == 1) {
+            int slotIndex = loadedSlots[0];
+            const SlotParameters& params = slotParameters[slotIndex];
+            
+            auto slotSampleData = std::make_shared<Core::SampleData>();
+            slotSampleData->mono = slotSamples[slotIndex].leftChannel;
+            slotSampleData->right = slotSamples[slotIndex].rightChannel;
+            slotSampleData->length = static_cast<int>(slotSamples[slotIndex].leftChannel.size());
+            slotSampleData->sourceSampleRate = slotSamples[slotIndex].sourceSampleRate;
+            
+            // Process MIDI events
+            for (const auto& event : midiEventBuffer) {
+                if (event.type == Core::MidiEvent::NoteOn) {
+                    engine.triggerNoteOnWithSample(event.note, event.velocity, slotSampleData,
+                                                   params.repitchSemitones, params.startPoint, params.endPoint, params.sampleGain,
+                                                   params.attackMs, params.decayMs, params.sustain, params.releaseMs,
+                                                   params.loopEnabled, params.loopStartPoint, params.loopEndPoint);
+                }
+            }
+            engine.process(channelPointers.data(), numChannels, numSamples);
+            
+            // Clear temp buffers
+            for (int ch = 0; ch < numChannels; ++ch) {
+                if (channelPointers[ch] != nullptr) {
+                    std::fill(buffer.getWritePointer(ch), buffer.getWritePointer(ch) + numSamples, 0.0f);
+                }
+            }
+            // Output is already in buffer via channelPointers
+            return;
+        } else {
+            // No slots loaded - silence
+            buffer.clear();
+            return;
+        }
+    }
+    
+    // Process MIDI events for each slot
+    for (const auto& event : midiEventBuffer) {
+        if (event.type == Core::MidiEvent::NoteOn) {
+            // Trigger all slots A-D (only loaded ones will actually play)
+            for (int slotIdx = 0; slotIdx < 4; ++slotIdx) {
+                if (slotSamples[slotIdx].hasSample && !slotSamples[slotIdx].leftChannel.empty()) {
+                    const SlotParameters& params = slotParameters[slotIdx];
+                    
+                    auto slotSampleData = std::make_shared<Core::SampleData>();
+                    slotSampleData->mono = slotSamples[slotIdx].leftChannel;
+                    slotSampleData->right = slotSamples[slotIdx].rightChannel;
+                    slotSampleData->length = static_cast<int>(slotSamples[slotIdx].leftChannel.size());
+                    slotSampleData->sourceSampleRate = slotSamples[slotIdx].sourceSampleRate;
+                    
+                    // In orbit mode, use the actual MIDI note so different keys play different pitches
+                    // All slots A-D still trigger simultaneously (for blending), but with the correct pitch
+                    // Store which slots are playing which note for NoteOff handling
+                    orbitSlotNotes[slotIdx] = event.note;  // Store note for this slot
+                    
+                    // In orbit mode, force loop enabled so samples play continuously while note is held
+                    // This allows smooth blending as weights change
+                    bool forceLoop = true;
+                    int loopStart = (params.loopStartPoint > 0) ? params.loopStartPoint : params.startPoint;
+                    int loopEnd = (params.loopEndPoint > 0) ? params.loopEndPoint : params.endPoint;
+                    if (loopEnd <= loopStart) loopEnd = params.endPoint;  // Fallback to end point
+                    
+                    // Use the actual MIDI note for pitch, but all slots still play simultaneously
+                    orbitEngines[slotIdx]->triggerNoteOnWithSample(event.note, event.velocity, slotSampleData,
+                                                                  params.repitchSemitones, params.startPoint, params.endPoint, params.sampleGain,
+                                                                  params.attackMs, params.decayMs, params.sustain, params.releaseMs,
+                                                                  forceLoop, loopStart, loopEnd);
+                }
+            }
+        } else if (event.type == Core::MidiEvent::NoteOff) {
+            // Send NoteOff to all orbit engines that are playing this note
+            // In orbit mode, multiple slots might be playing the same note simultaneously
+            for (int slotIdx = 0; slotIdx < 4; ++slotIdx) {
+                if (orbitSlotNotes[slotIdx] == event.note) {
+                    // Use the actual MIDI note (same as NoteOn)
+                    Core::MidiEvent noteOffEvent = event;
+                    orbitEngines[slotIdx]->handleMidi(&noteOffEvent, 1);
+                    orbitSlotNotes[slotIdx] = -1;  // Mark slot as not playing
+                }
+            }
+        }
+    }
+    
+    // Clear output buffer
+    buffer.clear();
+    
+    // Process each slot into temp buffers and blend with orbit weights
+    for (int slotIdx = 0; slotIdx < 4; ++slotIdx) {
+        if (slotSamples[slotIdx].hasSample && !slotSamples[slotIdx].leftChannel.empty() && currentOrbitWeights[slotIdx] > 0.0001f) {
+            // Clear temp buffer for this slot
+            std::fill(orbitTempBuffers[slotIdx].begin(), orbitTempBuffers[slotIdx].end(), 0.0f);
+            
+            // Process this slot's engine into temp buffer
+            orbitEngines[slotIdx]->process(orbitChannelPointers[slotIdx].data(), numChannels, numSamples);
+            
+            // Blend into output buffer with orbit weight
+            float weight = currentOrbitWeights[slotIdx];
+            for (int ch = 0; ch < numChannels; ++ch) {
+                float* outputPtr = buffer.getWritePointer(ch);
+                float* tempPtr = orbitTempBuffers[slotIdx].data() + (ch * numSamples);
+                for (int i = 0; i < numSamples; ++i) {
+                    outputPtr[i] += tempPtr[i] * weight;
+                }
+            }
+        }
+    }
 }
 
 void JuceEngineAdapter::convertMidiBuffer(juce::MidiBuffer& midiMessages, int numSamples) {

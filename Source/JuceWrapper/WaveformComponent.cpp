@@ -130,7 +130,7 @@ Core::WaveformData WaveformComponent::buildWaveformData() const
     data.waveformColor = Core::Color(255, 255, 255);      // White
     data.backgroundColor = Core::Color(10, 10, 10);        // Very dark
     data.gridColor = Core::Color(34, 34, 34);             // Subtle grid
-    data.markerColor = Core::Color(255, 255, 255);        // White
+    data.markerColor = Core::Color(255, 255, 255);        // White for loop markers
     data.playheadColor = Core::Color(255, 255, 0, 120);    // Yellow, ~47% opacity (120/255) - fainter
     
     return data;

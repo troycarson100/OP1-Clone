@@ -107,8 +107,16 @@ public:
     // Set playback mode (mono or poly)
     void setPlaybackMode(bool polyphonic);  // true = poly, false = mono
     
-    // Set sample playback mode (0 = Stacked, 1 = Round Robin)
-    void setPlaybackMode(int mode);  // 0 = Stacked, 1 = Round Robin
+    // Set sample playback mode (0 = Stacked, 1 = Round Robin, 2 = Orbit)
+    void setPlaybackMode(int mode);  // 0 = Stacked, 1 = Round Robin, 2 = Orbit
+    
+    // Orbit mode parameters
+    void setOrbitRate(float rateHz);
+    void setOrbitShape(int shape);  // 0=Circle, 1=PingPong, 2=Corners, 3=RandomSmooth
+    float getOrbitRate() const;
+    int getOrbitShape() const;
+    std::array<float, 4> getOrbitWeights() const;
+    float getOrbitBlenderPhase() const;  // Get current orbit phase for UI animation
     
     // Set loop parameters
     void setLoopEnabled(bool enabled);

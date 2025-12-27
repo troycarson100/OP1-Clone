@@ -3,6 +3,7 @@
 #include <juce_audio_basics/juce_audio_basics.h>
 #include "../Core/SamplerEngine.h"
 #include "../Core/MidiEvent.h"
+#include "../Core/DSP/OrbitBlender.h"
 #include <vector>
 #include <array>
 #include <atomic>
@@ -112,7 +113,7 @@ public:
     // Set sample for a specific slot (0-4 for A-E)
     void setSampleForSlot(int slotIndex, juce::AudioBuffer<float>& buffer, double sourceSampleRate);
     
-    // Set playback mode (0 = Stacked, 1 = Round Robin)
+    // Set playback mode (0 = Stacked, 1 = Round Robin, 2 = Orbit)
     void setPlaybackMode(int mode);
     
     // Set parameters for a specific slot (0-4 for A-E)
@@ -131,6 +132,14 @@ public:
     int getSlotStartPoint(int slotIndex) const;
     int getSlotEndPoint(int slotIndex) const;
     float getSlotSampleGain(int slotIndex) const;
+    
+    // Orbit mode parameters
+    void setOrbitRate(float rateHz);
+    void setOrbitShape(int shape);  // 0=Circle, 1=PingPong, 2=Corners, 3=RandomSmooth
+    float getOrbitRate() const;
+    int getOrbitShape() const;
+    std::array<float, 4> getOrbitWeights() const;  // Get current orbit weights for UI
+    float getOrbitPhase() const;  // Get current orbit phase (0.0-1.0) for dot animation
     
 private:
     Core::SamplerEngine engine;
@@ -190,12 +199,31 @@ private:
     // Source sample rate (stored when sample is loaded)
     double sourceSampleRate;
     
-    // Playback mode (0 = Stacked, 1 = Round Robin)
+    // Playback mode (0 = Stacked, 1 = Round Robin, 2 = Orbit)
     int playbackMode;
     int roundRobinIndex;  // Current index for round robin cycling
     
+    // Orbit blender (for Orbit mode)
+    Core::DSP::OrbitBlender orbitBlender;
+    std::array<float, 4> currentOrbitWeights;  // Current weights for slots A-D
+    double lastOrbitUpdateTime;  // Last update time for orbit (in seconds)
+    double currentSampleRate;  // For orbit timing
+    float orbitRateHz;  // Track orbit rate (Hz)
+    int orbitShape;  // Track orbit shape (0-3)
+    
+    // Orbit mode: separate engines for each slot (A-D only)
+    std::array<std::unique_ptr<Core::SamplerEngine>, 4> orbitEngines;
+    std::array<std::vector<float*>, 4> orbitChannelPointers;  // Per-slot channel pointers
+    std::array<std::vector<float>, 4> orbitTempBuffers;  // Per-slot temp buffers (L and R interleaved)
+    
+    // Orbit mode: track which note each slot is playing
+    std::array<int, 4> orbitSlotNotes;  // MIDI note for each slot (A-D), -1 if not playing
+    
     // Helper: convert JUCE MIDI buffer to Core MidiEvent array
     void convertMidiBuffer(juce::MidiBuffer& midiMessages, int numSamples);
+    
+    // Helper: process Orbit mode (separate from stacked/round robin)
+    void processOrbitMode(juce::AudioBuffer<float>& buffer, int numChannels, int numSamples);
     
     // Helper: preprocess sample data for click reduction (HPF DC removal, zero-crossing, normalization)
     void preprocessSampleData(std::vector<float>& data);

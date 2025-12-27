@@ -51,6 +51,17 @@ bool EditorEventHandlers::handleKeyStateChanged(bool /* isKeyDown */) {
 void EditorEventHandlers::handleButtonClicked(juce::Button* button) {
     // Instrument select button (squareButton1)
     if (button == &editor->squareButton1) {
+        // Close orbit menu if open (only one menu at a time)
+        if (editor->orbitMenuOpen) {
+            editor->orbitMenuOpen = false;
+            editor->screenComponent.showOrbitVisualization(false);
+            // Restore UI elements when closing orbit menu
+            editor->sampleNameLabel.setVisible(true);
+            editor->bpmDisplayLabel.setVisible(true);
+            editor->adsrPillComponent.setVisible(true);
+            editor->updateParameterDisplayLabels();  // Restore normal labels
+        }
+        
         // Toggle instrument menu
         editor->instrumentMenuOpen = !editor->instrumentMenuOpen;
         editor->screenComponent.showInstrumentMenu(editor->instrumentMenuOpen);
@@ -72,6 +83,76 @@ void EditorEventHandlers::handleButtonClicked(juce::Button* button) {
         
         // Hide ADSR pill component
         editor->adsrPillComponent.setVisible(!menuVisible);
+        
+        editor->repaint();
+        return;
+    }
+    
+    // Button 2: Orbit menu (auto-switch to Orbit mode if needed)
+    if (button == &editor->squareButton2) {
+        // If not in Orbit mode, switch to it first
+        if (editor->playbackMode != 2) {
+            editor->playbackMode = 2;
+            editor->audioProcessor.setPlaybackMode(2);
+            // Update encoder 4 display if in shift mode
+            if (editor->shiftToggleButton.getToggleState()) {
+                editor->paramDisplay4.setValue(1.0f);
+                editor->paramDisplay4.setValueText("Orbit");
+            }
+        }
+        
+        // Close instrument menu if open (only one menu at a time)
+        if (editor->instrumentMenuOpen) {
+            editor->instrumentMenuOpen = false;
+            editor->screenComponent.showInstrumentMenu(false);
+        }
+        
+        // Toggle orbit menu
+        editor->orbitMenuOpen = !editor->orbitMenuOpen;
+        editor->screenComponent.showOrbitVisualization(editor->orbitMenuOpen);
+        
+        // Parameter displays should be VISIBLE when orbit menu is open (they show orbit-specific labels)
+        bool orbitVisible = editor->orbitMenuOpen;
+        editor->paramDisplay1.setVisible(true);  // Always visible - shows orbit controls
+        editor->paramDisplay2.setVisible(true);
+        editor->paramDisplay3.setVisible(true);
+        editor->paramDisplay4.setVisible(true);
+        editor->paramDisplay5.setVisible(true);
+        editor->paramDisplay6.setVisible(true);
+        editor->paramDisplay7.setVisible(true);
+        editor->paramDisplay8.setVisible(true);
+        
+        // Hide sample name label and BPM display when orbit menu is open
+        editor->sampleNameLabel.setVisible(!orbitVisible);
+        editor->bpmDisplayLabel.setVisible(!orbitVisible);
+        editor->adsrPillComponent.setVisible(!orbitVisible);
+        
+        // Initialize orbit visualization with current slot data
+        if (editor->orbitMenuOpen) {
+            for (int i = 0; i < 4; ++i) {
+                std::vector<float> leftChannel, rightChannel;
+                editor->audioProcessor.getSlotStereoSampleDataForVisualization(i, leftChannel, rightChannel);
+                // Use left channel for preview (or mono mix if stereo)
+                std::vector<float> previewData = leftChannel;
+                if (!rightChannel.empty() && rightChannel.size() == leftChannel.size()) {
+                    for (size_t j = 0; j < previewData.size(); ++j) {
+                        previewData[j] = (previewData[j] + rightChannel[j]) * 0.5f;
+                    }
+                }
+                editor->screenComponent.setOrbitSlotPreview(i, previewData);
+            }
+            
+            // Update parameter display labels for orbit mode
+            editor->updateParameterDisplayLabels();
+        } else {
+            // Update parameter display labels when closing orbit menu
+            editor->updateParameterDisplayLabels();
+            
+            // Restore UI elements when closing orbit menu
+            editor->sampleNameLabel.setVisible(true);
+            editor->bpmDisplayLabel.setVisible(true);
+            editor->adsrPillComponent.setVisible(true);
+        }
         
         editor->repaint();
         return;

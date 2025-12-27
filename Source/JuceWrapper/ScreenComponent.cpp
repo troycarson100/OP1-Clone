@@ -20,6 +20,12 @@ ScreenComponent::ScreenComponent()
     instrumentMenu.setVisible(false);
     instrumentMenu.setAlwaysOnTop(true);
     
+    // Add orbit visualization (hidden by default)
+    addChildComponent(&orbitVisualization);
+    orbitVisualization.setVisible(false);
+    orbitVisualization.setAlwaysOnTop(true);
+    orbitVisualization.setInterceptsMouseClicks(false, false);
+    
     setOpaque(true);
 }
 
@@ -53,6 +59,9 @@ void ScreenComponent::resized() {
     
     // Instrument menu fills entire screen component
     instrumentMenu.setBounds(getLocalBounds());
+    
+    // Orbit visualization fills entire screen component
+    orbitVisualization.setBounds(getLocalBounds());
 }
 
 void ScreenComponent::setSelectedSlot(int slotIndex) {
@@ -118,13 +127,16 @@ void ScreenComponent::showInstrumentMenu(bool show) {
     instrumentMenu.setMenuVisible(show);
     if (show) {
         instrumentMenu.setSelectedIndex(0);  // Reset to first item
-        // Hide waveform component when menu is shown
+        // Hide waveform, sample slots, and orbit visualization when instrument menu is shown
         waveformComponent.setVisible(false);
+        sampleSlotComponent.setVisible(false);
+        orbitVisualization.setVisible(false);  // Ensure orbit menu is closed
         // Ensure menu covers entire screen component
         instrumentMenu.setBounds(getLocalBounds());
     } else {
-        // Show waveform component when menu is hidden
+        // Show waveform and sample slots when menu is hidden
         waveformComponent.setVisible(true);
+        sampleSlotComponent.setVisible(true);
     }
     repaint();
 }
@@ -156,5 +168,47 @@ void ScreenComponent::setSlotAPreview(const std::vector<float>& sampleData) {
 
 void ScreenComponent::setSlotPreview(int slotIndex, const std::vector<float>& sampleData) {
     sampleSlotComponent.setSlotPreview(slotIndex, sampleData);
+    // Also update orbit visualization if it's for slots A-D
+    if (slotIndex >= 0 && slotIndex < 4) {
+        orbitVisualization.setSlotPreview(slotIndex, sampleData);
+        orbitVisualization.setSlotLoaded(slotIndex, !sampleData.empty());
+    }
+}
+
+void ScreenComponent::showOrbitVisualization(bool show) {
+    orbitVisualization.setVisible(show);
+    if (show) {
+        // Hide waveform, sample slots, and instrument menu when orbit visualization is shown
+        waveformComponent.setVisible(false);
+        sampleSlotComponent.setVisible(false);
+        instrumentMenu.setVisible(false);  // Ensure instrument menu is closed
+        orbitVisualization.setBounds(getLocalBounds());
+    } else {
+        // Show waveform and sample slots when orbit visualization is hidden
+        waveformComponent.setVisible(true);
+        sampleSlotComponent.setVisible(true);
+    }
+    repaint();
+}
+
+void ScreenComponent::setOrbitSlotPreview(int slotIndex, const std::vector<float>& sampleData) {
+    orbitVisualization.setSlotPreview(slotIndex, sampleData);
+    orbitVisualization.setSlotLoaded(slotIndex, !sampleData.empty());
+}
+
+void ScreenComponent::setOrbitWeights(const std::array<float, 4>& weights) {
+    orbitVisualization.setOrbitWeights(weights);
+}
+
+void ScreenComponent::setOrbitShape(int shape) {
+    orbitVisualization.setOrbitShape(shape);
+}
+
+void ScreenComponent::setOrbitRate(float rateHz) {
+    orbitVisualization.setOrbitRate(rateHz);
+}
+
+void ScreenComponent::setOrbitPhase(float phase) {
+    orbitVisualization.setOrbitPhase(phase);
 }
 

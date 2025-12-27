@@ -5,6 +5,7 @@
 #include "WaveformComponent.h"
 #include "InstrumentMenuComponent.h"
 #include "SampleSlotComponent.h"
+#include "OrbitVisualizationComponent.h"
 
 // Main screen component for OP-1 Clone
 // Contains all visuals and menus for the synth
@@ -57,10 +58,20 @@ public:
     void selectInstrument();  // Selects the currently highlighted instrument
     void setInstrumentMenuCallback(std::function<void(const juce::String&)> callback);
     
+    // Orbit visualization control
+    void showOrbitVisualization(bool show);
+    bool isOrbitVisualizationVisible() const { return orbitVisualization.isVisible(); }
+    void setOrbitSlotPreview(int slotIndex, const std::vector<float>& sampleData);
+    void setOrbitWeights(const std::array<float, 4>& weights);
+    void setOrbitShape(int shape);
+    void setOrbitRate(float rateHz);
+    void setOrbitPhase(float phase);
+    
 private:
     WaveformComponent waveformComponent;
     InstrumentMenuComponent instrumentMenu;
     SampleSlotComponent sampleSlotComponent;
+    OrbitVisualizationComponent orbitVisualization;
     
     int selectedSlot;  // Currently selected slot (0-4 for A-E)
     

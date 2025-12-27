@@ -80,6 +80,24 @@ void EditorTimerCallback::handleTimerCallback() {
     std::array<bool, 5> activeSlots = editor->audioProcessor.getActiveSlots();
     editor->screenComponent.setActiveSlots(activeSlots);
     
+    // Update orbit visualization if in Orbit mode and menu is open
+    if (editor->playbackMode == 2 && editor->orbitMenuOpen) {
+        // Update orbit weights
+        std::array<float, 4> orbitWeights = editor->audioProcessor.getOrbitWeights();
+        editor->screenComponent.setOrbitWeights(orbitWeights);
+        
+        // Update orbit shape and rate
+        editor->screenComponent.setOrbitShape(editor->audioProcessor.getOrbitShape());
+        editor->screenComponent.setOrbitRate(editor->audioProcessor.getOrbitRate());
+        
+        // Update orbit phase for dot animation
+        float phase = editor->audioProcessor.getOrbitBlenderPhase();
+        editor->screenComponent.setOrbitPhase(phase);
+        
+        // Force repaint of orbit visualization for smooth animation
+        editor->screenComponent.repaint();
+    }
+    
     // Update playhead positions (yellow lines on waveform - one per active voice)
     std::vector<double> playheadPositions;
     std::vector<float> envelopeValues;

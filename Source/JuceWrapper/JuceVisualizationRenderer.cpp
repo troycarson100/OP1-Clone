@@ -252,10 +252,11 @@ void JuceVisualizationRenderer::drawLoopMarkers(const Core::WaveformData& data, 
                 ((static_cast<float>(data.loopStartPoint - visibleStart) / static_cast<float>(visibleLength)) * static_cast<float>(width));
             int startXInt = static_cast<int>(loopStartX);
             
+            graphics->setColour(toJuceColor(data.markerColor));  // Very light grey line for loop start
             graphics->drawVerticalLine(startXInt, lineTop, lineBottom);
             
             // Draw "S" flag
-            float flagSize = 16.0f;
+            float flagSize = 20.0f;  // Made taller
             float flagY = lineTop;
             juce::Path flagPath;
             
@@ -269,13 +270,7 @@ void JuceVisualizationRenderer::drawLoopMarkers(const Core::WaveformData& data, 
                                    loopStartX, flagY + flagSize);
             }
             
-            // Draw drop shadow first (slightly offset and semi-transparent)
-            juce::Path shadowPath = flagPath;
-            float shadowOffset = 1.0f;
-            shadowPath.applyTransform(juce::AffineTransform::translation(shadowOffset, shadowOffset));
-            graphics->setColour(juce::Colour(0x40000000));  // Semi-transparent black
-            graphics->fillPath(shadowPath);
-            
+            // Draw flag with very light grey color (no drop shadow)
             graphics->setColour(toJuceColor(data.markerColor));
             graphics->fillPath(flagPath);
             
@@ -295,11 +290,11 @@ void JuceVisualizationRenderer::drawLoopMarkers(const Core::WaveformData& data, 
                 ((static_cast<float>(data.loopEndPoint - visibleStart) / static_cast<float>(visibleLength)) * static_cast<float>(width));
             int endXInt = static_cast<int>(loopEndX);
             
-            graphics->setColour(juce::Colours::white);  // White line for loop end
+            graphics->setColour(toJuceColor(data.markerColor));  // Very light grey line for loop end
             graphics->drawVerticalLine(endXInt, lineTop, lineBottom);
             
             // Draw "E" flag
-            float flagSize = 16.0f;
+            float flagSize = 20.0f;  // Made taller
             float flagY = lineTop;
             juce::Path flagPath;
             
@@ -313,13 +308,7 @@ void JuceVisualizationRenderer::drawLoopMarkers(const Core::WaveformData& data, 
                                    loopEndX, flagY + flagSize);
             }
             
-            // Draw drop shadow first (slightly offset and semi-transparent)
-            juce::Path shadowPath = flagPath;
-            float shadowOffset = 1.0f;
-            shadowPath.applyTransform(juce::AffineTransform::translation(shadowOffset, shadowOffset));
-            graphics->setColour(juce::Colour(0x40000000));  // Semi-transparent black
-            graphics->fillPath(shadowPath);
-            
+            // Draw flag with very light grey color (no drop shadow)
             graphics->setColour(toJuceColor(data.markerColor));
             graphics->fillPath(flagPath);
             
@@ -611,6 +600,7 @@ void JuceVisualizationRenderer::drawLoopMarkersForChannel(const Core::WaveformDa
             ((static_cast<float>(data.loopStartPoint - visibleStart) / static_cast<float>(visibleLength)) * static_cast<float>(width));
         int startXInt = static_cast<int>(loopStartX);
 
+        graphics->setColour(toJuceColor(data.markerColor));  // Very light grey line for loop start
         graphics->drawVerticalLine(startXInt, lineTop, lineBottom);
 
         float flagSize = 16.0f;
@@ -627,13 +617,7 @@ void JuceVisualizationRenderer::drawLoopMarkersForChannel(const Core::WaveformDa
                                loopStartX, flagY + flagSize);
         }
 
-        // Draw drop shadow first (slightly offset and semi-transparent)
-        juce::Path shadowPath = flagPath;
-        float shadowOffset = 1.0f;
-        shadowPath.applyTransform(juce::AffineTransform::translation(shadowOffset, shadowOffset));
-        graphics->setColour(juce::Colour(0x40000000));  // Semi-transparent black
-        graphics->fillPath(shadowPath);
-
+        // Draw flag with very light grey color (no drop shadow)
         graphics->setColour(toJuceColor(data.markerColor));
         graphics->fillPath(flagPath);
 
@@ -651,7 +635,7 @@ void JuceVisualizationRenderer::drawLoopMarkersForChannel(const Core::WaveformDa
             ((static_cast<float>(data.loopEndPoint - visibleStart) / static_cast<float>(visibleLength)) * static_cast<float>(width));
         int endXInt = static_cast<int>(loopEndX);
 
-        graphics->setColour(juce::Colours::white);  // White line for loop end
+        graphics->setColour(toJuceColor(data.markerColor));  // Very light grey line for loop end
         graphics->drawVerticalLine(endXInt, lineTop, lineBottom);
 
         float flagSize = 16.0f;
@@ -668,13 +652,7 @@ void JuceVisualizationRenderer::drawLoopMarkersForChannel(const Core::WaveformDa
                                loopEndX, flagY + flagSize);
         }
 
-        // Draw drop shadow first (slightly offset and semi-transparent)
-        juce::Path shadowPath = flagPath;
-        float shadowOffset = 1.0f;
-        shadowPath.applyTransform(juce::AffineTransform::translation(shadowOffset, shadowOffset));
-        graphics->setColour(juce::Colour(0x40000000));  // Semi-transparent black
-        graphics->fillPath(shadowPath);
-
+        // Draw flag with very light grey color (no drop shadow)
         graphics->setColour(toJuceColor(data.markerColor));
         graphics->fillPath(flagPath);
 

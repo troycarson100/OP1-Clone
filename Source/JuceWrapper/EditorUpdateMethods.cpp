@@ -1,5 +1,6 @@
 #include "EditorUpdateMethods.h"
 #include "PluginEditor.h"
+#include "EncoderSetupManager.h"
 #include <juce_core/juce_core.h>
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <vector>
@@ -182,15 +183,66 @@ void EditorUpdateMethods::updateBPMDisplay() {
 }
 
 void EditorUpdateMethods::updateParameterDisplayLabels() {
+    // Check if orbit menu is open - if so, use orbit-specific labels
+    if (editor->playbackMode == 2 && editor->orbitMenuOpen) {
+        // Orbit menu mode: Orbit-specific controls
+        // TRIPLET and DOTTED are shown as part of RATE value, not separate knobs
+        editor->paramDisplay1.setLabel("RATE");
+        editor->paramDisplay2.setLabel("SHAPE");
+        editor->paramDisplay3.setLabel("CURVE");
+        // Clear knobs 4-8 (blank labels and empty values)
+        editor->paramDisplay4.setLabel("");
+        editor->paramDisplay4.setValueText("");
+        editor->paramDisplay4.setValue(0.0f);
+        editor->paramDisplay5.setLabel("");
+        editor->paramDisplay5.setValueText("");
+        editor->paramDisplay5.setValue(0.0f);
+        editor->paramDisplay6.setLabel("");
+        editor->paramDisplay6.setValueText("");
+        editor->paramDisplay6.setValue(0.0f);
+        editor->paramDisplay7.setLabel("");
+        editor->paramDisplay7.setValueText("");
+        editor->paramDisplay7.setValue(0.0f);
+        editor->paramDisplay8.setLabel("");
+        editor->paramDisplay8.setValueText("");
+        editor->paramDisplay8.setValue(0.0f);
+        
+        // Update display values and sync encoder positions for first 3 knobs only
+        juce::String rateText = EncoderSetupManager::getNoteValueString(editor->orbitRateNoteValue);
+        if (editor->orbitRateTriplet) rateText += "T";
+        if (editor->orbitRateDotted) rateText += ".";
+        // Reverse mapping: noteValue 0=4 bars (encoder 1.0), noteValue 8=1/64 (encoder 0.0)
+        float reversedValue = 1.0f - (editor->orbitRateNoteValue / 8.0f);
+        editor->paramDisplay1.setValue(reversedValue);
+        editor->paramDisplay1.setValueText(rateText);
+        editor->encoder1.setValue(reversedValue);  // Sync encoder position
+        
+        // Update shape display
+        const char* shapeNames[] = {"Circle", "PingPong", "Corners", "Random", "Figure8", "ZigZag", "Spiral", "Square"};
+        if (editor->orbitShape >= 0 && editor->orbitShape < 8) {
+            editor->paramDisplay2.setValueText(shapeNames[editor->orbitShape]);
+        }
+        editor->paramDisplay2.setValue(editor->orbitShape / 7.0f);  // 0-7 maps to 0.0-1.0
+        editor->encoder2.setValue(editor->orbitShape / 7.0f);  // Sync encoder position
+        
+        // Update curve display
+        editor->paramDisplay3.setValueText(juce::String(static_cast<int>(editor->orbitCurve * 100)) + "%");
+        editor->paramDisplay3.setValue(editor->orbitCurve);
+        editor->encoder3.setValue(editor->orbitCurve);  // Sync encoder position
+        
+        return;
+    }
+    
     // Update parameter display labels based on shift state
+    // But ignore shift mode if orbit menu is open
     bool shiftEnabled = editor->shiftToggleButton.getToggleState();
     
-    if (shiftEnabled) {
+    if (shiftEnabled && !(editor->playbackMode == 2 && editor->orbitMenuOpen)) {
         // Shift mode: LP filter and loop parameters
         editor->paramDisplay1.setLabel("CUTOFF");
         editor->paramDisplay2.setLabel("RES.");
         editor->paramDisplay3.setLabel("DRIVE");
-        editor->paramDisplay4.setLabel("PLAYBACK");  // Playback mode (Stacked/Round Robin)
+        editor->paramDisplay4.setLabel("P.B.");  // Playback mode (Stacked/Round Robin/Orbit)
         editor->paramDisplay5.setLabel("L.START");
         editor->paramDisplay6.setLabel("L.END");
         editor->paramDisplay7.setLabel("LOOP");
@@ -226,6 +278,12 @@ void EditorUpdateMethods::updateLoopControlsState() {
 
 void EditorUpdateMethods::updateShiftModeDisplayValues() {
     // Update display values when shift mode is toggled
+    // But ignore shift mode if orbit menu is open
+    if (editor->playbackMode == 2 && editor->orbitMenuOpen) {
+        // Orbit menu is open - don't show shift mode values
+        return;
+    }
+    
     bool shiftEnabled = editor->shiftToggleButton.getToggleState();
     
     if (shiftEnabled) {
@@ -253,11 +311,17 @@ void EditorUpdateMethods::updateShiftModeDisplayValues() {
         editor->paramDisplay3.setValue(driveValue);
         editor->paramDisplay3.setValueText(juce::String(editor->lpDriveDb, 1) + "dB");
         
-        // Encoder 4: Playback mode (0 = Stacked, 1 = Round Robin, default 0 = 0.0)
-        float playbackValue = editor->playbackMode == 0 ? 0.0f : 1.0f;
+        // Encoder 4: Playback mode (0 = Stacked, 1 = Round Robin, 2 = Orbit, default 0 = 0.0)
+        float playbackValue = editor->playbackMode == 0 ? 0.0f : (editor->playbackMode == 1 ? 0.5f : 1.0f);
         editor->encoder4.setValue(playbackValue);
         editor->paramDisplay4.setValue(playbackValue);
-        editor->paramDisplay4.setValueText(editor->playbackMode == 0 ? "Stacked" : "Round Robin");
+        if (editor->playbackMode == 0) {
+            editor->paramDisplay4.setValueText("Stacked");
+        } else if (editor->playbackMode == 1) {
+            editor->paramDisplay4.setValueText("Round Robin");
+        } else {
+            editor->paramDisplay4.setValueText("Orbit");
+        }
         
         // Encoder 5: Loop Start (already handled by waveform)
         // Encoder 6: Loop End (already handled by waveform)

@@ -10,6 +10,7 @@
 // #include "ADSRVisualizationComponent.h"  // COMMENTED OUT - replaced with ADSRPillComponent
 #include "ADSRPillComponent.h"
 #include "PianoIconButton.h"
+#include "OrbitIconButton.h"
 #include "../Core/SlotSnapshot.h"
 #include <array>
 #include <vector>
@@ -131,7 +132,7 @@ private:
     
     // 5 square buttons above encoders
     PianoIconButton squareButton1;  // Instrument select button with piano icon
-    juce::TextButton squareButton2;
+    OrbitIconButton squareButton2;
     juce::TextButton squareButton3;
     juce::TextButton squareButton4;
     juce::TextButton squareButton5;
@@ -187,8 +188,15 @@ private:
     float lpEnvAmount;     // Envelope amount (-1.0 to 1.0, positive/negative) - DEPRECATED, kept for future use
     float lpDriveDb;       // Drive amount in dB (0.0-24.0 dB)
     bool isPolyphonic;      // Playback mode (true = poly, false = mono)
-    int playbackMode;       // Sample playback mode (0 = Stacked, 1 = Round Robin)
+    int playbackMode;       // Sample playback mode (0 = Stacked, 1 = Round Robin, 2 = Orbit)
     int roundRobinIndex;    // Current index for round robin cycling
+    bool orbitMenuOpen;     // Whether orbit menu is open
+    float orbitRateHz;      // Orbit rate in Hz (derived from musical rate)
+    int orbitShape;         // Orbit shape (0=Circle, 1=PingPong, 2=Corners, 3=RandomSmooth, 4=Figure8, 5=ZigZag, ...)
+    int orbitRateNoteValue; // Musical note value (0=4 bars, 1=2 bars, 2=1 bar, 3=1/2, 4=1/4, 5=1/8, 6=1/16, 7=1/32, 8=1/64)
+    bool orbitRateTriplet;  // Triplet timing
+    bool orbitRateDotted;   // Dotted timing
+    float orbitCurve;       // Curve amount (0.0-1.0) for rate smoothing
     int loopStartPoint;    // Loop start point (sample index)
     int loopEndPoint;      // Loop end point (sample index)
     bool loopEnabled;      // Loop on/off

@@ -370,6 +370,30 @@ void Op1CloneAudioProcessor::setPlaybackMode(int mode) {
     adapter.setPlaybackMode(mode);
 }
 
+void Op1CloneAudioProcessor::setOrbitRate(float rateHz) {
+    adapter.setOrbitRate(rateHz);
+}
+
+void Op1CloneAudioProcessor::setOrbitShape(int shape) {
+    adapter.setOrbitShape(shape);
+}
+
+float Op1CloneAudioProcessor::getOrbitRate() const {
+    return adapter.getOrbitRate();
+}
+
+int Op1CloneAudioProcessor::getOrbitShape() const {
+    return adapter.getOrbitShape();
+}
+
+std::array<float, 4> Op1CloneAudioProcessor::getOrbitWeights() const {
+    return adapter.getOrbitWeights();
+}
+
+float Op1CloneAudioProcessor::getOrbitBlenderPhase() const {
+    return adapter.getOrbitPhase();
+}
+
 void Op1CloneAudioProcessor::setSampleForSlot(int slotIndex, juce::AudioBuffer<float>& buffer, double sourceSampleRate) {
     adapter.setSampleForSlot(slotIndex, buffer, sourceSampleRate);
 }

@@ -97,11 +97,27 @@ Op1CloneAudioProcessorEditor::Op1CloneAudioProcessorEditor(Op1CloneAudioProcesso
     lpEnvAmount = 0.0f;  // DEPRECATED - kept for future use
     lpDriveDb = 0.0f;  // Default to 0 dB
     isPolyphonic = true;  // Default to Poly/Stereo
-    playbackMode = 0;  // Default to Stacked (0 = Stacked, 1 = Round Robin) - GLOBAL, not per-slot
+    playbackMode = 0;  // Default to Stacked (0 = Stacked, 1 = Round Robin, 2 = Orbit) - GLOBAL, not per-slot
     roundRobinIndex = 0;  // Start at first slot for round robin
+    orbitMenuOpen = false;  // Orbit menu starts closed
+    orbitRateHz = 1.0f;  // Default orbit rate (will be calculated from note value)
+    orbitShape = 0;  // Default shape: Circle
+    orbitRateNoteValue = 2;  // Default: 1 bar - note values: 0=4 bars, 1=2 bars, 2=1 bar, 3=1/2, 4=1/4, 5=1/8, 6=1/16, 7=1/32, 8=1/64
+    orbitRateTriplet = false;
+    orbitRateDotted = false;
+    orbitCurve = 0.5f;  // Default curve: 50%
+    
+    // Calculate initial orbit rate from note value (1 bar at 120 BPM)
+    float bpm = 120.0f;
+    float baseDuration = 60.0f * 4.0f / bpm;  // 1 bar = 4 beats = 60*4/bpm seconds
+    orbitRateHz = 1.0f / baseDuration;
     
     // Initialize global playbackMode in adapter
     audioProcessor.setPlaybackMode(playbackMode);
+    
+    // Initialize orbit parameters
+    audioProcessor.setOrbitRate(orbitRateHz);
+    audioProcessor.setOrbitShape(orbitShape);
     loopStartPoint = 0;
     loopEndPoint = 0;
     loopEnabled = false;  // Default to OFF
@@ -259,7 +275,7 @@ Op1CloneAudioProcessorEditor::Op1CloneAudioProcessorEditor(Op1CloneAudioProcesso
     squareButton1.addListener(this);
     addAndMakeVisible(&squareButton1);
     
-    squareButton2.setButtonText("");
+    // Button 2: Orbit menu (figure-8 icon with dot)
     squareButton2.setColour(juce::TextButton::buttonColourId, juce::Colours::darkgrey);
     squareButton2.addListener(this);
     addAndMakeVisible(&squareButton2);
@@ -287,7 +303,7 @@ Op1CloneAudioProcessorEditor::Op1CloneAudioProcessorEditor(Op1CloneAudioProcesso
     setWantsKeyboardFocus(true);
     
     // Start timer to update error status (every 100ms)
-    startTimer(100);
+    startTimer(16);  // ~60fps for smoother orbit animation
     
     // ADSR parameters (in milliseconds, except sustain which is 0.0-1.0)
     adsrAttackMs = 800.0f;  // Default: 800ms

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <juce_core/juce_core.h>
+
 class Op1CloneAudioProcessorEditor;
 
 // Manager class to handle all encoder setup and callbacks
@@ -23,5 +25,11 @@ private:
     void setupEncoder6();
     void setupEncoder7();
     void setupEncoder8();
+    
+public:
+    // Helper: Convert note value index to string (1/64, 1/32, etc.)
+    static juce::String getNoteValueString(int noteValue);
+    
+private:
 };
 
